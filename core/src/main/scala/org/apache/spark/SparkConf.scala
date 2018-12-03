@@ -53,7 +53,6 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging with Seria
 
   /** Create a SparkConf that loads defaults from system properties and the classpath */
   def this() = this(true)
-
   private val settings = new ConcurrentHashMap[String, String]()
 
   @transient private lazy val reader: ConfigReader = {
@@ -64,12 +63,13 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging with Seria
     _reader
   }
 
-  if (loadDefaults) {
+  if (loadDefaults) { //  如果loadDefaults为true，将会从系统属性中加载spark配置
     loadFromSystemProperties(false)
   }
 
   private[spark] def loadFromSystemProperties(silent: Boolean): SparkConf = {
     // Load any spark.* system properties
+    // 加载以spark开头的系统属性
     for ((key, value) <- Utils.getSystemProperties if key.startsWith("spark.")) {
       set(key, value, silent)
     }
@@ -426,7 +426,7 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging with Seria
 
   private[spark] def contains(entry: ConfigEntry[_]): Boolean = contains(entry.key)
 
-  /** Copy this object */
+  /** 继承至Cloneabel，并实现了clone方法，使得该类为一个可拷贝的对象 */
   override def clone: SparkConf = {
     val cloned = new SparkConf(false)
     settings.entrySet().asScala.foreach { e =>

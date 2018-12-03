@@ -60,13 +60,17 @@ import org.apache.spark.network.util.TransportConf;
 public class TransportClientFactory implements Closeable {
 
   /** A simple data structure to track the pool of clients between two peer nodes. */
+  // 针对每个socket地址的连接池
   private static class ClientPool {
+
     TransportClient[] clients;
     Object[] locks;
 
     ClientPool(int size) {
       clients = new TransportClient[size];
       locks = new Object[size];
+      // lock数组中的Object与client中的TransportClient按照数组索引一一对应
+      // 通过对每个TransportClient分别采用不同的锁，降低并发情况下线程间对锁的争用，进而减少阻塞，提高并发度
       for (int i = 0; i < size; i++) {
         locks[i] = new Object();
       }
@@ -75,17 +79,23 @@ public class TransportClientFactory implements Closeable {
 
   private static final Logger logger = LoggerFactory.getLogger(TransportClientFactory.class);
 
-  private final TransportContext context;
-  private final TransportConf conf;
-  private final List<TransportClientBootstrap> clientBootstraps;
-  private final ConcurrentHashMap<SocketAddress, ClientPool> connectionPool;
+  private final TransportContext context;//参数传递的TransportContext引用
+  private final TransportConf conf;//指TransportConf，这里通过调用TransportContext的getConf获取
+  private final List<TransportClientBootstrap> clientBootstraps; //参数传递的TransportClientBootstrap列表
+  private final ConcurrentHashMap<SocketAddress, ClientPool> connectionPool;//针对每个Socket地址的连接
+  //池ClientPool的缓存
 
   /** Random number generator for picking connections between peers. */
+  // 对socket地址对应的连接池ClientPool中缓存的TransportClient进行随机选择，对每个连接做负载均衡
   private final Random rand;
+  // 从TransportConf获取的key为"spark+模块名+.io.num-ConnectionsPerpeer"的属性值。此属性值用于指定对等节点间
+  // 的连接数。这里的模块名称实际为TransportConf的module字段。Spark的很多组件都利用RPC框架构建，它们自建按照模块
+  // 名区分，例如，RPC模块的key为"spark.rpc.io.num-ConnectionsPerPeer"
   private final int numConnectionsPerPeer;
-
+  // 客户端channel被创建时使用的类，默认为NioSocketChannel，Spark还支持EpoolEventLoopGroup。
   private final Class<? extends Channel> socketChannelClass;
   private EventLoopGroup workerGroup;
+  // 汇集ByteBuf但对本地线程缓存禁用的分配器
   private PooledByteBufAllocator pooledAllocator;
 
   public TransportClientFactory(
@@ -124,6 +134,7 @@ public class TransportClientFactory implements Closeable {
     // Get connection from the connection pool first.
     // If it is not found or not active, create a new one.
     // Use unresolved address here to avoid DNS resolution each time we creates a client.
+    // 这种方法创建InetSocketAddress，可以在缓存中已经有TransportClient时避免不必要的域名解析
     final InetSocketAddress unresolvedAddress =
       InetSocketAddress.createUnresolved(remoteHost, remotePort);
 
@@ -197,6 +208,7 @@ public class TransportClientFactory implements Closeable {
   private TransportClient createClient(InetSocketAddress address) throws IOException {
     logger.debug("Creating new connection to {}", address);
 
+    // client端使用bootstrap
     Bootstrap bootstrap = new Bootstrap();
     bootstrap.group(workerGroup)
       .channel(socketChannelClass)

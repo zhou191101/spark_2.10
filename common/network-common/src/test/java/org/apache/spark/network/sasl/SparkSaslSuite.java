@@ -461,6 +461,7 @@ public class SparkSaslSuite {
 
   }
 
+  // 移除客户端管道中的SASL加密
   private static class EncryptionDisablerBootstrap implements TransportClientBootstrap {
 
     @Override

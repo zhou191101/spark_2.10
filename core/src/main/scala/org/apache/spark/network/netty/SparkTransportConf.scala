@@ -66,6 +66,8 @@ object SparkTransportConf {
    * If numUsableCores is 0, we will use Runtime get an approximate number of available cores.
    */
   private def defaultNumThreads(numUsableCores: Int): Int = {
+    // 分配给网络传输的线程数最多为8个，如果numUsableCores小与等于0，那么线程数就是系统可用的处理器数量，
+    // 但是不会将所有的处理器都拿去网络开销，就限制了最大为8
     val availableCores =
       if (numUsableCores > 0) numUsableCores else Runtime.getRuntime.availableProcessors()
     math.min(availableCores, MAX_DEFAULT_NETTY_THREADS)

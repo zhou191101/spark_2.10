@@ -319,67 +319,67 @@
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-http</artifactId>
         <version>${jetty.version}</version>
-        <scope>provided</scope>
+        <!--<scope>provided</scope>-->
       </dependency>
       <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-continuation</artifactId>
         <version>${jetty.version}</version>
-        <scope>provided</scope>
+        <!--<scope>provided</scope>-->
       </dependency>
       <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-servlet</artifactId>
         <version>${jetty.version}</version>
-        <scope>provided</scope>
+        <!--<scope>provided</scope>-->
       </dependency>
       <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-servlets</artifactId>
         <version>${jetty.version}</version>
-        <scope>provided</scope>
+        <!--<scope>provided</scope>-->
       </dependency>
       <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-proxy</artifactId>
         <version>${jetty.version}</version>
-        <scope>provided</scope>
+        <!--<scope>provided</scope>-->
       </dependency>
       <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-client</artifactId>
         <version>${jetty.version}</version>
-        <scope>provided</scope>
+        <!--<scope>provided</scope>-->
       </dependency>
       <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-util</artifactId>
         <version>${jetty.version}</version>
-        <scope>provided</scope>
+        <!--<scope>provided</scope>-->
       </dependency>
       <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-security</artifactId>
         <version>${jetty.version}</version>
-        <scope>provided</scope>
+        <!--<scope>provided</scope>-->
       </dependency>
       <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-plus</artifactId>
         <version>${jetty.version}</version>
-        <scope>provided</scope>
+        <!--<scope>provided</scope>-->
       </dependency>
       <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-server</artifactId>
         <version>${jetty.version}</version>
-        <scope>provided</scope>
+        <!--<scope>provided</scope>-->
       </dependency>
       <dependency>
         <groupId>com.google.guava</groupId>
         <artifactId>guava</artifactId>
         <version>14.0.1</version>
-        <scope>provided</scope>
+        <!--<scope>provided</scope>-->
       </dependency>
       <!-- End of shaded deps -->
       <dependency>
@@ -475,13 +475,13 @@
         <groupId>org.slf4j</groupId>
         <artifactId>slf4j-api</artifactId>
         <version>${slf4j.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
       </dependency>
       <dependency>
         <groupId>org.slf4j</groupId>
         <artifactId>slf4j-log4j12</artifactId>
         <version>${slf4j.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
       </dependency>
       <dependency>
         <groupId>org.slf4j</groupId>
@@ -498,7 +498,7 @@
         <groupId>log4j</groupId>
         <artifactId>log4j</artifactId>
         <version>${log4j.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
       </dependency>
       <dependency>
         <groupId>com.ning</groupId>
@@ -509,7 +509,7 @@
         <groupId>org.xerial.snappy</groupId>
         <artifactId>snappy-java</artifactId>
         <version>${snappy.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
       </dependency>
       <dependency>
         <groupId>net.jpountz.lz4</groupId>
@@ -537,7 +537,7 @@
         <groupId>com.google.protobuf</groupId>
         <artifactId>protobuf-java</artifactId>
         <version>${protobuf.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
       </dependency>
       <dependency>
         <groupId>org.roaringbitmap</groupId>
@@ -805,7 +805,7 @@
         <groupId>org.apache.hadoop</groupId>
         <artifactId>hadoop-client</artifactId>
         <version>${hadoop.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>asm</groupId>
@@ -861,13 +861,13 @@
         <groupId>org.apache.avro</groupId>
         <artifactId>avro</artifactId>
         <version>${avro.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
       </dependency>
       <dependency>
         <groupId>org.apache.avro</groupId>
         <artifactId>avro-ipc</artifactId>
         <version>${avro.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>io.netty</groupId>
@@ -904,7 +904,7 @@
         <artifactId>avro-mapred</artifactId>
         <version>${avro.version}</version>
         <classifier>${avro.mapred.classifier}</classifier>
-        <scope>${hive.deps.scope}</scope>
+        <!--<scope>${hive.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>io.netty</groupId>
@@ -933,7 +933,7 @@
         <groupId>net.java.dev.jets3t</groupId>
         <artifactId>jets3t</artifactId>
         <version>${jets3t.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>commons-logging</groupId>
@@ -945,7 +945,7 @@
         <groupId>org.apache.hadoop</groupId>
         <artifactId>hadoop-yarn-api</artifactId>
         <version>${yarn.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>javax.servlet</groupId>
@@ -985,7 +985,7 @@
         <groupId>org.apache.hadoop</groupId>
         <artifactId>hadoop-yarn-common</artifactId>
         <version>${yarn.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>asm</groupId>
@@ -1066,7 +1066,7 @@
         <groupId>org.apache.hadoop</groupId>
         <artifactId>hadoop-yarn-server-web-proxy</artifactId>
         <version>${yarn.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>asm</groupId>
@@ -1106,7 +1106,7 @@
         <groupId>org.apache.hadoop</groupId>
         <artifactId>hadoop-yarn-client</artifactId>
         <version>${yarn.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>asm</groupId>
@@ -1146,7 +1146,7 @@
         <groupId>org.apache.zookeeper</groupId>
         <artifactId>zookeeper</artifactId>
         <version>${zookeeper.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>org.jboss.netty</groupId>
@@ -1158,13 +1158,13 @@
         <groupId>org.codehaus.jackson</groupId>
         <artifactId>jackson-core-asl</artifactId>
         <version>${codehaus.jackson.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
       </dependency>
       <dependency>
         <groupId>org.codehaus.jackson</groupId>
         <artifactId>jackson-mapper-asl</artifactId>
         <version>${codehaus.jackson.version}</version>
-        <scope>${hadoop.deps.scope}</scope>
+        <!--<scope>${hadoop.deps.scope}</scope>-->
       </dependency>
       <dependency>
         <groupId>org.codehaus.jackson</groupId>
@@ -1180,7 +1180,7 @@
         <groupId>${hive.group}</groupId>
         <artifactId>hive-beeline</artifactId>
         <version>${hive.version}</version>
-        <scope>${hive.deps.scope}</scope>
+        <!--<scope>${hive.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>${hive.group}</groupId>
@@ -1232,7 +1232,7 @@
         <groupId>${hive.group}</groupId>
         <artifactId>hive-cli</artifactId>
         <version>${hive.version}</version>
-        <scope>${hive.deps.scope}</scope>
+        <!--<scope>${hive.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>${hive.group}</groupId>
@@ -1288,7 +1288,7 @@
         <groupId>${hive.group}</groupId>
         <artifactId>hive-common</artifactId>
         <version>${hive.version}</version>
-        <scope>${hive.deps.scope}</scope>
+        <!--<scope>${hive.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>${hive.group}</groupId>
@@ -1328,7 +1328,7 @@
         <classifier>core</classifier>
 -->
         <version>${hive.version}</version>
-        <scope>${hive.deps.scope}</scope>
+        <!--<scope>${hive.deps.scope}</scope>-->
         <exclusions>
 
           <!-- pull this in when needed; the explicit definition culls the surplis-->
@@ -1508,7 +1508,7 @@
         <groupId>${hive.group}</groupId>
         <artifactId>hive-metastore</artifactId>
         <version>${hive.version}</version>
-        <scope>${hive.deps.scope}</scope>
+        <!--<scope>${hive.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>${hive.group}</groupId>
@@ -1549,7 +1549,7 @@
         <groupId>${hive.group}</groupId>
         <artifactId>hive-serde</artifactId>
         <version>${hive.version}</version>
-        <scope>${hive.deps.scope}</scope>
+        <!--<scope>${hive.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>${hive.group}</groupId>
@@ -1605,7 +1605,7 @@
       <dependency>
         <groupId>net.sf.jpam</groupId>
         <artifactId>jpam</artifactId>
-        <scope>${hive.deps.scope}</scope>
+        <!--<scope>${hive.deps.scope}</scope>-->
         <version>${jpam.version}</version>
         <exclusions>
           <exclusion>
@@ -1622,7 +1622,7 @@
         <groupId>${hive.group}</groupId>
         <artifactId>hive-shims</artifactId>
         <version>${hive.version}</version>
-        <scope>${hive.deps.scope}</scope>
+        <!--<scope>${hive.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>com.google.guava</groupId>
@@ -1670,19 +1670,19 @@
         <groupId>org.apache.parquet</groupId>
         <artifactId>parquet-column</artifactId>
         <version>${parquet.version}</version>
-        <scope>${parquet.deps.scope}</scope>
+        <!--<scope>${parquet.deps.scope}</scope>-->
       </dependency>
       <dependency>
         <groupId>org.apache.parquet</groupId>
         <artifactId>parquet-hadoop</artifactId>
         <version>${parquet.version}</version>
-        <scope>${parquet.deps.scope}</scope>
+        <!--<scope>${parquet.deps.scope}</scope>-->
       </dependency>
       <dependency>
         <groupId>org.apache.parquet</groupId>
         <artifactId>parquet-avro</artifactId>
         <version>${parquet.version}</version>
-        <scope>${parquet.test.deps.scope}</scope>
+        <!--<scope>${parquet.test.deps.scope}</scope>-->
       </dependency>
       <dependency>
         <groupId>com.twitter</groupId>
@@ -1694,7 +1694,7 @@
         <groupId>org.apache.flume</groupId>
         <artifactId>flume-ng-core</artifactId>
         <version>${flume.version}</version>
-        <scope>${flume.deps.scope}</scope>
+        <!--<scope>${flume.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>io.netty</groupId>
@@ -1718,7 +1718,7 @@
         <groupId>org.apache.flume</groupId>
         <artifactId>flume-ng-sdk</artifactId>
         <version>${flume.version}</version>
-        <scope>${flume.deps.scope}</scope>
+        <!--<scope>${flume.deps.scope}</scope>-->
         <exclusions>
           <exclusion>
             <groupId>io.netty</groupId>
@@ -2329,7 +2329,7 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-source-plugin</artifactId>
       </plugin>
-      <plugin>
+<!--      <plugin>
         <groupId>org.scalastyle</groupId>
         <artifactId>scalastyle-maven-plugin</artifactId>
         <version>0.8.0</version>
@@ -2352,7 +2352,7 @@
             </goals>
           </execution>
         </executions>
-      </plugin>
+      </plugin>-->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-checkstyle-plugin</artifactId>

@@ -43,8 +43,10 @@ public class TransportConf {
   private final String SPARK_NETWORK_IO_RETRYWAIT_KEY;
   private final String SPARK_NETWORK_IO_LAZYFD_KEY;
 
+  // 配置提供者
   private final ConfigProvider conf;
 
+  // 配置的模块名称
   private final String module;
 
   public TransportConf(String module, ConfigProvider conf) {
