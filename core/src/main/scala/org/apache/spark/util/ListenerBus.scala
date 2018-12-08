@@ -28,9 +28,11 @@ import org.apache.spark.internal.Logging
 /**
  * An event bus which posts events to its listeners.
  */
+// L是代表监听器的范型参数，E代表事件的范型参数
 private[spark] trait ListenerBus[L <: AnyRef, E] extends Logging {
 
   // Marked `private[spark]` for access in tests.
+  // 用于维护所有注册的监听器，器数据结构为CopyOnWriteArrayList
   private[spark] val listeners = new CopyOnWriteArrayList[L]
 
   /**
@@ -58,6 +60,7 @@ private[spark] trait ListenerBus[L <: AnyRef, E] extends Logging {
     // Java Iterator directly.
     val iter = listeners.iterator
     while (iter.hasNext) {
+      // 先检查后执行，因此是非线程安全的，因此要保证执行这个方法的线程只有一个
       val listener = iter.next()
       try {
         doPostEvent(listener, event)

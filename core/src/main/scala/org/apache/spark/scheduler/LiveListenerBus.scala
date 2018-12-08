@@ -28,7 +28,7 @@ import org.apache.spark.util.Utils
 
 /**
  * Asynchronously passes SparkListenerEvents to registered SparkListeners.
- *
+ * 通过异步传递来将SparkListenerEvents注册到SparkListeners
  * Until `start()` is called, all posted events are only buffered. Only after this listener bus
  * has started will events be actually propagated to all attached listeners. This listener bus
  * is stopped when `stop()` is called, and it will drop further events after stopping.
@@ -42,6 +42,8 @@ private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends Spa
   // Cap the capacity of the event queue so we get an explicit error (rather than
   // an OOM exception) if it's perpetually being added to more quickly than it's being drained.
   private lazy val EVENT_QUEUE_CAPACITY = validateAndGetQueueSize()
+  // 是SparkListenerEvents事件的阻塞队列，队列大小可通过spark属性
+  // spark.scheduler.listenerbus.eventqueue.size进行配置，默认为10000
   private lazy val eventQueue = new LinkedBlockingQueue[SparkListenerEvent](EVENT_QUEUE_CAPACITY)
 
   private def validateAndGetQueueSize(): Int = {
@@ -65,23 +67,28 @@ private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends Spa
 
   // Indicate if we are processing some event
   // Guarded by `self`
+  // 用来标记正有事件被listenerThread处理
   private var processingEvent = false
-
+  // 用于标记是否由于eventQueue已满，导致新的事件被删除
   private val logDroppedEvent = new AtomicBoolean(false)
 
   // A counter that represents the number of events produced and consumed in the queue
+  // 用于当有新的事件到来时释放信号量，当对事件进行处理时获取信号量
   private val eventLock = new Semaphore(0)
 
   private val listenerThread = new Thread(name) {
     setDaemon(true)
+    // tryOrStopSparkContext可以保证当listennerThread的内部循环抛出异常后启动一个新的线程停止SparkContext
     override def run(): Unit = Utils.tryOrStopSparkContext(sparkContext) {
       LiveListenerBus.withinListenerThread.withValue(true) {
         while (true) {
+          // 不断获取信号量，当可以获取信号量时，说明还有事件未处理
           eventLock.acquire()
           self.synchronized {
             processingEvent = true
           }
           try {
+            // 从eventQueue中获取事件
             val event = eventQueue.poll
             if (event == null) {
               // Get out of the while loop and shutdown the daemon thread
@@ -124,7 +131,9 @@ private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends Spa
       logError(s"$name has already stopped! Dropping event $event")
       return
     }
+    // 向eventQueue中添加事件
     val eventAdded = eventQueue.offer(event)
+    // 如果添加成功，就释放信号量
     if (eventAdded) {
       eventLock.release()
     } else {
@@ -205,7 +214,7 @@ private[spark] class LiveListenerBus(val sparkContext: SparkContext) extends Spa
   /**
    * If the event queue exceeds its capacity, the new events will be dropped. The subclasses will be
    * notified with the dropped events.
-   *
+   * 如果queue已满造成添加失败，则移除事件
    * Note: `onDropEvent` can be called in any thread.
    */
   def onDropEvent(event: SparkListenerEvent): Unit = {

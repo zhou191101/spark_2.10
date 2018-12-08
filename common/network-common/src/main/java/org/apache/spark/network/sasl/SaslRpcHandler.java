@@ -75,15 +75,19 @@ class SaslRpcHandler extends RpcHandler {
 
   @Override
   public void receive(TransportClient client, ByteBuffer message, RpcResponseCallback callback) {
+   // 如果SASL认证已经完成（isComplete等于true），则将消息传递给SaslRpcHandler所代理对下游RpcHandler并返回
     if (isComplete) {
       // Authentication complete, delegate to base handler.
+      // 将消息传递给SaslRpcHandler所代理的下游RpcHandler并返回
       delegate.receive(client, message, callback);
       return;
     }
 
+    // 如果SASL认证交换未完成，则对客户端发送对消息进行SASL解密，客户端收到第一条消息时会进行这个操作
     ByteBuf nettyBuf = Unpooled.wrappedBuffer(message);
     SaslMessage saslMessage;
     try {
+      // 对客户端发送对数据进行sasl解密
       saslMessage = SaslMessage.decode(nettyBuf);
     } finally {
       nettyBuf.release();
@@ -115,6 +119,7 @@ class SaslRpcHandler extends RpcHandler {
       isComplete = true;
       if (SparkSaslServer.QOP_AUTH_CONF.equals(saslServer.getNegotiatedProperty(Sasl.QOP))) {
         logger.debug("Enabling encryption for channel {}", client);
+        // 对管道进行SASL加密
         SaslEncryption.addToChannel(channel, saslServer, conf.maxSaslEncryptedBlockSize());
         saslServer = null;
       } else {

@@ -117,6 +117,7 @@ public class TransportClient implements Closeable {
   }
 
   /**
+   * 从远端协商好的流中请求单个块
    * Requests a single chunk from the remote side, from the pre-negotiated streamId.
    *
    * Chunk indices go from 0 onwards. It is valid to request the same chunk multiple times, though
@@ -140,6 +141,7 @@ public class TransportClient implements Closeable {
       logger.debug("Sending fetch chunk request {} to {}", chunkIndex, getRemoteAddress(channel));
     }
 
+    // 使用流的标记streamId和块的索引chunkIndex创建StreamChunkId
     final StreamChunkId streamChunkId = new StreamChunkId(streamId, chunkIndex);
     handler.addFetchRequest(streamChunkId, callback);
 
@@ -170,6 +172,7 @@ public class TransportClient implements Closeable {
   }
 
   /**
+   * 使用流的ID，从远端获取流数据
    * Request to stream the data with the given stream ID from the remote end.
    *
    * @param streamId The stream to fetch.
@@ -213,6 +216,7 @@ public class TransportClient implements Closeable {
   }
 
   /**
+   * 向服务端发送RPC的请求，通过at least once delivery原则保证不会丢失
    * Sends an opaque message to the RpcHandler on the server-side. The callback will be invoked
    * with the server's response or upon any failure.
    *
@@ -227,6 +231,7 @@ public class TransportClient implements Closeable {
     }
 
     final long requestId = Math.abs(UUID.randomUUID().getLeastSignificantBits());
+    // TransportResponseHandler
     handler.addRpcRequest(requestId, callback);
 
     channel.writeAndFlush(new RpcRequest(requestId, new NioManagedBuffer(message))).addListener(
@@ -243,6 +248,7 @@ public class TransportClient implements Closeable {
             String errorMsg = String.format("Failed to send RPC %s to %s: %s", requestId,
               getRemoteAddress(channel), future.cause());
             logger.error(errorMsg, future.cause());
+            // 发送失败以后将此次请求从outstandingRpcs中移除
             handler.removeRpcRequest(requestId);
             channel.close();
             try {
@@ -258,6 +264,7 @@ public class TransportClient implements Closeable {
   }
 
   /**
+   * 向服务端发送异步的RPC请求，并根据指定的超时事件等待响应
    * Synchronously sends an opaque message to the RpcHandler on the server-side, waiting for up to
    * a specified timeout for a response.
    */
@@ -290,6 +297,7 @@ public class TransportClient implements Closeable {
   }
 
   /**
+   * 向服务端发送RPC请求，但是并不期望能获取响应，因而不能保证投递的可靠性
    * Sends an opaque message to the RpcHandler on the server-side. No reply is expected for the
    * message, and no delivery guarantees are made.
    *

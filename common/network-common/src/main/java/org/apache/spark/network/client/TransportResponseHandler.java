@@ -81,6 +81,7 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
 
   public void addRpcRequest(long requestId, RpcResponseCallback callback) {
     updateTimeOfLastRequest();
+    // 将requestid和RpcResponseCallback加入到映射
     outstandingRpcs.put(requestId, callback);
   }
 
@@ -178,7 +179,7 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
           resp.body().release();
         }
       }
-    } else if (message instanceof RpcFailure) {
+    } else if (message instanceof RpcFailure) {// 处理响应失败后的处理逻辑
       RpcFailure resp = (RpcFailure) message;
       RpcResponseCallback listener = outstandingRpcs.get(resp.requestId);
       if (listener == null) {
