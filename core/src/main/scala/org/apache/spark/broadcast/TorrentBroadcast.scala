@@ -88,6 +88,7 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
   private val numBlocks: Int = writeBlocks(obj)
 
   /** Whether to generate checksum for blocks or not. */
+  // 是否给分片广播块生成校验和
   private var checksumEnabled: Boolean = false
   /** The checksum for all the blocks. */
   private var checksums: Array[Int] = _
@@ -122,8 +123,10 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
     if (!blockManager.putSingle(broadcastId, value, MEMORY_AND_DISK, tellMaster = false)) {
       throw new SparkException(s"Failed to store $broadcastId in BlockManager")
     }
+    // 将对象转换成一系列的块，块的大小由blockSize决定，使用当前的JavaSerializer组件进行序列化
     val blocks =
       TorrentBroadcast.blockifyObject(value, blockSize, SparkEnv.get.serializer, compressionCodec)
+
     if (checksumEnabled) {
       checksums = new Array[Int](blocks.length)
     }
@@ -131,8 +134,10 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
       if (checksumEnabled) {
         checksums(i) = calcChecksum(block)
       }
+      // 给当前分片广播生成分片的BroadcastBlockId，分片通过BroadcastBlockId的Field属性区别：piece1，piece2。。。
       val pieceId = BroadcastBlockId(id, "piece" + i)
       val bytes = new ChunkedByteBuffer(block.duplicate())
+      // 将分片广播块以序列化方式写入Driver本地的存储体系
       if (!blockManager.putBytes(pieceId, bytes, MEMORY_AND_DISK_SER, tellMaster = true)) {
         throw new SparkException(s"Failed to store $pieceId of $broadcastId in local BlockManager")
       }
@@ -147,12 +152,14 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
     val blocks = new Array[ChunkedByteBuffer](numBlocks)
     val bm = SparkEnv.get.blockManager
 
+    // 对哥哥广播分片进行随机洗牌，避免对广播块的获取出现热点，提升性能
     for (pid <- Random.shuffle(Seq.range(0, numBlocks))) {
       val pieceId = BroadcastBlockId(id, "piece" + pid)
       logDebug(s"Reading piece $pieceId of $broadcastId")
       // First try getLocalBytes because there is a chance that previous attempts to fetch the
       // broadcast blocks have already fetched some of the blocks. In that case, some blocks
       // would be available locally (on this executor).
+      // 从本地存储体系获取分片广播变量
       bm.getLocalBytes(pieceId) match {
         case Some(block) =>
           blocks(pid) = block
@@ -161,6 +168,7 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
           bm.getRemoteBytes(pieceId) match {
             case Some(b) =>
               if (checksumEnabled) {
+                // 计算校验和，比对数据的完整性
                 val sum = calcChecksum(b.chunks(0))
                 if (sum != checksums(pid)) {
                   throw new SparkException(s"corrupt remote block $pieceId of $broadcastId:" +
@@ -212,6 +220,8 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
           releaseLock(broadcastId)
           x.asInstanceOf[T]
 
+          // 如果从本地的存储体系中没有获取到广播对象，那么说明数据是通过BlockManager的putBytes方法
+          // 以序列化方式写入存储体系的
         case None =>
           logInfo("Started reading broadcast variable " + id)
           val startTimeMs = System.currentTimeMillis()
