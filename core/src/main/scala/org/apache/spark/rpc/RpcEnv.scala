@@ -51,8 +51,10 @@ private[spark] object RpcEnv {
       conf: SparkConf,
       securityManager: SecurityManager,
       clientMode: Boolean): RpcEnv = {
+    // RpcEnvConfig中保存了RpcEnv的配置信息
     val config = RpcEnvConfig(conf, name, bindAddress, advertiseAddress, port, securityManager,
       clientMode)
+    // 创建RpcEnv
     new NettyRpcEnvFactory().create(config)
   }
 }

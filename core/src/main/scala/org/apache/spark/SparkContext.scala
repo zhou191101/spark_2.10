@@ -515,6 +515,7 @@ class SparkContext(config: SparkConf) extends Logging {
       System.setProperty("spark.ui.proxyBase", "/proxy/" + _applicationId)
     }
     _ui.foreach(_.setAppId(_applicationId))
+    // 初始化blockManager
     _env.blockManager.initialize(_applicationId)
 
     // The metrics system for Driver need to be set spark.app.id to app ID.
@@ -523,12 +524,14 @@ class SparkContext(config: SparkConf) extends Logging {
     // Attach the driver metrics servlet handler to the web ui after the metrics system is started.
     _env.metricsSystem.getServletHandlers.foreach(handler => ui.foreach(_.attachHandler(handler)))
 
+    // 创建事件日志监听器
     _eventLogger =
       if (isEventLogEnabled) {
         val logger =
           new EventLoggingListener(_applicationId, _applicationAttemptId, _eventLogDir.get,
             _conf, _hadoopConfiguration)
         logger.start()
+        // EventLoggingListener也将参与到对事件总线中事件的监听中，并把感兴趣的事件记录到日志
         listenerBus.addListener(logger)
         Some(logger)
       } else {
@@ -536,9 +539,11 @@ class SparkContext(config: SparkConf) extends Logging {
       }
 
     // Optionally scale number of executors dynamically based on workload. Exposed for testing.
+    // 判断是否是动态分配的
     val dynamicAllocationEnabled = Utils.isDynamicAllocationEnabled(_conf)
     _executorAllocationManager =
       if (dynamicAllocationEnabled) {
+        // 判断schedulerBackend的实现类是否实现了ExecutorAllocationClient特质
         schedulerBackend match {
           case b: ExecutorAllocationClient =>
             Some(new ExecutorAllocationManager(
@@ -560,17 +565,22 @@ class SparkContext(config: SparkConf) extends Logging {
     _cleaner.foreach(_.start())
 
     setupAndStartListenerBus()
+    // 由于addJar和addFile可能会对应用的环境产生影响，所有需要在最好调用此方法更新环境
     postEnvironmentUpdate()
+    // 向事件总线投递SparkListenerApplicationStart事件
     postApplicationStart()
 
     // Post init
+    // 等待SchedulerBackend准备完成
     _taskScheduler.postStartHook()
+    // 向度量系统注册source
     _env.metricsSystem.registerSource(_dagScheduler.metricsSource)
     _env.metricsSystem.registerSource(new BlockManagerSource(_env.blockManager))
     _executorAllocationManager.foreach { e =>
       _env.metricsSystem.registerSource(e.executorAllocationManagerSource)
     }
 
+    // 添加SparkContent的关系钩子
     // Make sure the context is stopped if the user forgets about it. This avoids leaving
     // unfinished event logs around after the JVM exits cleanly. It doesn't help if the JVM
     // is killed, though.
@@ -1915,8 +1925,10 @@ class SparkContext(config: SparkConf) extends Logging {
     if (conf.getBoolean("spark.logLineage", false)) {
       logInfo("RDD's recursive dependencies:\n" + rdd.toDebugString)
     }
+    // 将已经构建好的DAG的rdd提交给DAGScheduler进行调度。
     dagScheduler.runJob(rdd, cleanedFunc, partitions, callSite, resultHandler, localProperties.get)
     progressBar.foreach(_.finishAll())
+    // 调用rdd的doCheckpoint方法保持检查点
     rdd.doCheckpoint()
   }
 
@@ -2194,6 +2206,7 @@ class SparkContext(config: SparkConf) extends Logging {
         }
     }
 
+    // 启动时间总线，并将_listenerBusStarted设置为true
     listenerBus.start()
     _listenerBusStarted = true
   }
@@ -2217,8 +2230,10 @@ class SparkContext(config: SparkConf) extends Logging {
       val schedulingMode = getSchedulingMode.toString
       val addedJarPaths = addedJars.keys.toSeq
       val addedFilePaths = addedFiles.keys.toSeq
+      // 将JVM参数，spark属性，系统属性，classPath等信息设置为环境明确信息
       val environmentDetails = SparkEnv.environmentDetails(conf, schedulingMode, addedJarPaths,
         addedFilePaths)
+      // 生成SparkListenerEnvironmentUpdate事件，并投递到事件总线
       val environmentUpdate = SparkListenerEnvironmentUpdate(environmentDetails)
       listenerBus.post(environmentUpdate)
     }

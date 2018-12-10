@@ -149,6 +149,7 @@ private[netty] class Outbox(nettyEnv: NettyRpcEnv, val address: RpcAddress) {
       }
       if (draining) {
         // There is some thread draining, so just exit
+        // 如果有线程正在处理message列表中的消息，则返回
         return
       }
       message = messages.poll()
@@ -161,6 +162,7 @@ private[netty] class Outbox(nettyEnv: NettyRpcEnv, val address: RpcAddress) {
       try {
         val _client = synchronized { client }
         if (_client != null) {
+          // 不断发送消息
           message.sendWith(_client)
         } else {
           assert(stopped == true)
@@ -188,6 +190,7 @@ private[netty] class Outbox(nettyEnv: NettyRpcEnv, val address: RpcAddress) {
 
       override def call(): Unit = {
         try {
+          // 创建TransportClient
           val _client = nettyEnv.createClient(address)
           outbox.synchronized {
             client = _client

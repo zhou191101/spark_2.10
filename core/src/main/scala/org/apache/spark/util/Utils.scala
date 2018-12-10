@@ -2458,6 +2458,7 @@ private[spark] object Utils extends Logging {
    */
   def isDynamicAllocationEnabled(conf: SparkConf): Boolean = {
     val dynamicAllocationEnabled = conf.getBoolean("spark.dynamicAllocation.enabled", false)
+    // 动态分配需要为true并且是非local模式或者spark.dynamicAllocation.testing为true
     dynamicAllocationEnabled &&
       (!isLocalMaster(conf) || conf.getBoolean("spark.dynamicAllocation.testing", false))
   }

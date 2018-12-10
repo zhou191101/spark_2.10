@@ -217,8 +217,10 @@ private[spark] class ExecutorAllocationManager(
    * the scheduling task.
    */
   def start(): Unit = {
+    // 向事件总线添加ExecutorAllocationListener
     listenerBus.addListener(listener)
 
+    // 创建定时调度任务scheduleTask，此任务主要调用schedule方法
     val scheduleTask = new Runnable() {
       override def run(): Unit = {
         try {
@@ -231,8 +233,13 @@ private[spark] class ExecutorAllocationManager(
         }
       }
     }
+    // 将scheduleTask 提交给线程池，以间隔intervalMillis=100 时间进行调度
     executor.scheduleWithFixedDelay(scheduleTask, 0, intervalMillis, TimeUnit.MILLISECONDS)
 
+    // 利用 ExecutorAllocationClient的requestTotalExecutors方法请求所有的executor。
+    // numExecutorsTarget 是动态分配executor的总数
+    // localityAwareTasks是由本地性偏好的Task数量
+    // hostToLocalTaskCount是host与想要在此节点上运行的task的数量之间的映射关系
     client.requestTotalExecutors(numExecutorsTarget, localityAwareTasks, hostToLocalTaskCount)
   }
 
@@ -278,6 +285,7 @@ private[spark] class ExecutorAllocationManager(
   private def schedule(): Unit = synchronized {
     val now = clock.getTimeMillis
 
+    // 重新计算所需的executor数量，并更新请求的executor数量
     updateAndSyncNumExecutorsTarget(now)
 
     val executorIdsToBeRemoved = ArrayBuffer[String]()
@@ -307,12 +315,15 @@ private[spark] class ExecutorAllocationManager(
    * @return the delta in the target number of executors.
    */
   private def updateAndSyncNumExecutorsTarget(now: Long): Int = synchronized {
+    // 获得实际需要的executor的最大数量；maxneeded
     val maxNeeded = maxNumExecutorsNeeded
 
+    // 如果ExecutorAllocationManager还在初始化，则返回0
     if (initializing) {
       // Do not change our target while we are still initializing,
       // Otherwise the first job may have to ramp up unnecessarily
       0
+      // 最大所需小于实际分配，减少executor数量
     } else if (maxNeeded < numExecutorsTarget) {
       // The target number exceeds the number we actually need, so stop adding new
       // executors and inform the cluster manager to cancel the extra pending requests
@@ -322,6 +333,8 @@ private[spark] class ExecutorAllocationManager(
 
       // If the new target has not changed, avoid sending a message to the cluster manager
       if (numExecutorsTarget < oldNumExecutorsTarget) {
+        // 重新请求numExecutorsTarget指定的目标executor数量，以此停止添加新的执行程序，并通知集群管理器
+        // 取消额外的待处理executor请求，最好返回减少的executor数量
         client.requestTotalExecutors(numExecutorsTarget, localityAwareTasks, hostToLocalTaskCount)
         logDebug(s"Lowering target number of executors to $numExecutorsTarget (previously " +
           s"$oldNumExecutorsTarget) because not all requested executors are actually needed")

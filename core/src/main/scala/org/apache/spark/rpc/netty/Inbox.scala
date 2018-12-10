@@ -61,6 +61,8 @@ private[netty] class Inbox(
 
   inbox =>  // Give this an alias so we can use it more clearly in closures.
 
+  // 消息列表，用于缓存需要由对应RpcEndPoint处理的消息，即与Inbox在同一EndPointData中的
+  // RpcEndPoint。
   @GuardedBy("this")
   protected val messages = new java.util.LinkedList[InboxMessage]()
 
@@ -87,10 +89,15 @@ private[netty] class Inbox(
   def process(dispatcher: Dispatcher): Unit = {
     var message: InboxMessage = null
     inbox.synchronized {
+      // 进行线程的并发检查。如果不允许多个线程同时处理messages中的消息（enableConcurrent为false）
+      // 并且当前激活线程数（numActiveThreads）不为0，则说明已经有线程在处理消息，所有当前线程不允许
+      //再区处理消息
       if (!enableConcurrent && numActiveThreads != 0) {
         return
       }
+      //从message中获取消息
       message = messages.poll()
+      // 如果消息不为空，则当前线程需要处理该消息，将numActiveThreads加一
       if (message != null) {
         numActiveThreads += 1
       } else {
@@ -98,6 +105,7 @@ private[netty] class Inbox(
       }
     }
     while (true) {
+      // 根据消息类型进行匹配，并执行对应的逻辑
       safelyCall(endpoint) {
         message match {
           case RpcMessage(_sender, content, context) =>
@@ -150,12 +158,16 @@ private[netty] class Inbox(
       inbox.synchronized {
         // "enableConcurrent" will be set to false after `onStop` is called, so we should check it
         // every time.
+        // 对激活线程的数量进行控制
+        // 如果不允许多个线程同时处理message中的消息并且当前激活的线程数多于一个
+        // 那么需要当前线程退出并将numActiveThreads减一
         if (!enableConcurrent && numActiveThreads != 1) {
           // If we are not the only one worker, exit
           numActiveThreads -= 1
           return
         }
         message = messages.poll()
+        // 如果messages已经名没有消息要处理了，这说明当前线程无论如何也要返回并将numActiveThreads减一
         if (message == null) {
           numActiveThreads -= 1
           return
@@ -204,6 +216,7 @@ private[netty] class Inbox(
   private def safelyCall(endpoint: RpcEndpoint)(action: => Unit): Unit = {
     try action catch {
       case NonFatal(e) =>
+        // 当发生错误时，当前Inbox所对应RpcEndPoint的错误处理方法onError可以接收到这些错误信息
         try endpoint.onError(e) catch {
           case NonFatal(ee) => logError(s"Ignoring error", ee)
         }
