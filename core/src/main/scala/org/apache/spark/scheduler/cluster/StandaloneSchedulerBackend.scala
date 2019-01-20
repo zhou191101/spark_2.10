@@ -50,16 +50,18 @@ private[spark] class StandaloneSchedulerBackend(
   @volatile var shutdownCallback: StandaloneSchedulerBackend => Unit = _
   @volatile private var appId: String = _
 
+  // 用于等待Application向Master注册完成后，将Application的当前状态告知LauncherServer
   private val registrationBarrier = new Semaphore(0)
 
   private val maxCores = conf.getOption("spark.cores.max").map(_.toInt)
   private val totalExpectedCores = maxCores.getOrElse(0)
 
   override def start() {
-    super.start()
-    launcherBackend.connect()
+    super.start() // 创建并注册DriverEndpoint
+    launcherBackend.connect() // 与launcherBackend建立连接
 
     // The endpoint for executors to talk to us
+    // 生成Driver URL，Executor将通过此URL与Driver通信
     val driverUrl = RpcEndpointAddress(
       sc.conf.get("spark.driver.host"),
       sc.conf.get("spark.driver.port").toInt,
@@ -108,7 +110,7 @@ private[spark] class StandaloneSchedulerBackend(
     client = new StandaloneAppClient(sc.env.rpcEnv, masters, appDesc, this, conf)
     client.start()
     launcherBackend.setState(SparkAppHandle.State.SUBMITTED)
-    waitForRegistration()
+    waitForRegistration()// 等待注册完成
     launcherBackend.setState(SparkAppHandle.State.RUNNING)
   }
 

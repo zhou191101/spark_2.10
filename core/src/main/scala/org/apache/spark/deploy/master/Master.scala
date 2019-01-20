@@ -54,10 +54,15 @@ private[deploy] class Master(
   // For application IDs
   private def createDateFormat = new SimpleDateFormat("yyyyMMddHHmmss", Locale.US)
 
+  // worker的超时时间
   private val WORKER_TIMEOUT_MS = conf.getLong("spark.worker.timeout", 60) * 1000
+  // completedApps中最多可以保留的ApplicationInfo的数量的限制大小
   private val RETAINED_APPLICATIONS = conf.getInt("spark.deploy.retainedApplications", 200)
+  // completedApps中最多可以保留的DriverInfo的数量的限制大小
   private val RETAINED_DRIVERS = conf.getInt("spark.deploy.retainedDrivers", 200)
+  // 从workers中移除处于死亡状态的Worker所对应的WorkerInfo的权重。
   private val REAPER_ITERATIONS = conf.getInt("spark.dead.worker.persistence", 15)
+  // 恢复模式
   private val RECOVERY_MODE = conf.get("spark.deploy.recoveryMode", "NONE")
   private val MAX_EXECUTOR_RETRIES = conf.getInt("spark.deploy.maxExecutorRetries", 10)
 
@@ -210,9 +215,11 @@ private[deploy] class Master(
   override def receive: PartialFunction[Any, Unit] = {
     case ElectedLeader =>
       val (storedApps, storedDrivers, storedWorkers) = persistenceEngine.readPersistedData(rpcEnv)
+      // 如果没有任何持久化信息，将master的当前状态设置为激活
       state = if (storedApps.isEmpty && storedDrivers.isEmpty && storedWorkers.isEmpty) {
         RecoveryState.ALIVE
       } else {
+        // 如果有持久化信息，那么将Master的当前状态设置为恢复中
         RecoveryState.RECOVERING
       }
       logInfo("I have been elected leader! New state: " + state)
@@ -392,7 +399,7 @@ private[deploy] class Master(
         workerHost, workerPort, cores, Utils.megabytesToString(memory)))
       if (state == RecoveryState.STANDBY) {
         context.reply(MasterInStandby)
-      } else if (idToWorker.contains(id)) {
+      } else if (idToWorker.contains(id)) {// 如果idToWorker中已经包含了worker的信息，那么说明worker重复注册
         context.reply(RegisterWorkerFailed("Duplicate worker ID"))
       } else {
         val worker = new WorkerInfo(id, workerHost, workerPort, cores, memory,
@@ -514,6 +521,9 @@ private[deploy] class Master(
       try {
         registerApplication(app)
         app.state = ApplicationState.UNKNOWN
+        // 向提交应用程序的Driver发送MasterChanged信息。Driver收到MasterChanged信息后，将自身
+        // 的master属性修改为当前Master的RpcEndPointRef，并将alreadyDisconnected设置为false
+        // 最后向master发送MasterChangeAcknowledged消息
         app.driver.send(MasterChanged(self, masterWebUiUrl))
       } catch {
         case e: Exception => logInfo("App " + app.id + " had exception on reconnect")
@@ -550,9 +560,9 @@ private[deploy] class Master(
     // Reschedule drivers which were not claimed by any workers
     drivers.filter(_.worker.isEmpty).foreach { d =>
       logWarning(s"Driver ${d.id} was not found after master recovery")
-      if (d.desc.supervise) {
+      if (d.desc.supervise) {// 由集群监管的Driver
         logWarning(s"Re-launching ${d.id}")
-        relaunchDriver(d)
+        relaunchDriver(d)// 重新调度运行指定的Driver
       } else {
         removeDriver(d.id, DriverState.ERROR, None)
         logWarning(s"Did not re-launch ${d.id} because it was not supervised")
@@ -590,6 +600,7 @@ private[deploy] class Master(
       spreadOutApps: Boolean): Array[Int] = {
     val coresPerExecutor = app.desc.coresPerExecutor
     val minCoresPerExecutor = coresPerExecutor.getOrElse(1)
+    // 是否在每个worker上只分配一个executor
     val oneExecutorPerWorker = coresPerExecutor.isEmpty
     val memoryPerExecutor = app.desc.memoryPerExecutorMB
     val numUsable = usableWorkers.length
@@ -619,6 +630,7 @@ private[deploy] class Master(
 
     // Keep launching executors until no more workers can accommodate any
     // more executors, or if we have reached this application's limits
+    // 获取所有空如也运行Executor的Worker的索引freeWorkers
     var freeWorkers = (0 until numUsable).filter(canLaunchExecutor)
     while (freeWorkers.nonEmpty) {
       freeWorkers.foreach { pos =>
@@ -656,6 +668,7 @@ private[deploy] class Master(
     // Right now this is a very simple FIFO scheduler. We keep trying to fit in the first app
     // in the queue, then the second app, etc.
     for (app <- waitingApps if app.coresLeft > 0) {
+      // 获取每个executor使用的内核数
       val coresPerExecutor: Option[Int] = app.desc.coresPerExecutor
       // Filter out workers that don't have enough resources to launch an executor
       val usableWorkers = workers.toArray.filter(_.state == WorkerState.ALIVE)
@@ -701,6 +714,7 @@ private[deploy] class Master(
    * every time a new app joins or resource availability changes.
    */
   private def schedule(): Unit = {
+    // 如果master 不是alive状态，直接返回
     if (state != RecoveryState.ALIVE) {
       return
     }
@@ -718,6 +732,7 @@ private[deploy] class Master(
         val worker = shuffledAliveWorkers(curPos)
         numWorkersVisited += 1
         if (worker.memoryFree >= driver.desc.mem && worker.coresFree >= driver.desc.cores) {
+          // 运行driver
           launchDriver(worker, driver)
           waitingDrivers -= driver
           launched = true
@@ -776,6 +791,7 @@ private[deploy] class Master(
     if (reverseProxy) {
       webUi.removeProxyTargets(worker.id)
     }
+    // 将worker上的executor都作为丢失状态处理
     for (exec <- worker.executors.values) {
       logInfo("Telling app of lost executor: " + exec.id)
       exec.application.driver.send(ExecutorUpdated(
@@ -786,7 +802,7 @@ private[deploy] class Master(
     for (driver <- worker.drivers.values) {
       if (driver.desc.supervise) {
         logInfo(s"Re-launching ${driver.id}")
-        relaunchDriver(driver)
+        relaunchDriver(driver)// 重新调度运行Driver
       } else {
         logInfo(s"Not re-launching ${driver.id} because it was not supervised")
         removeDriver(driver.id, DriverState.ERROR, None)
@@ -969,6 +985,7 @@ private[deploy] class Master(
         removeWorker(worker)
       } else {
         if (worker.lastHeartbeat < currentTime - ((REAPER_ITERATIONS + 1) * WORKER_TIMEOUT_MS)) {
+          // 等待足够长时间后将它移除
           workers -= worker // we've seen this DEAD worker in the UI, etc. for long enough; cull it
         }
       }
@@ -1005,13 +1022,17 @@ private[deploy] class Master(
         drivers -= driver
         if (completedDrivers.size >= RETAINED_DRIVERS) {
           val toRemove = math.max(RETAINED_DRIVERS / 10, 1)
+          // 移除completeDrivers中开头的一些DriverInfo
           completedDrivers.trimStart(toRemove)
         }
+        // 将找到的DriverInfo放入completedDrivers集合中
         completedDrivers += driver
+        // 移除DriverInfo的持久化数据
         persistenceEngine.removeDriver(driver)
         driver.state = finalState
         driver.exception = exception
         driver.worker.foreach(w => w.removeDriver(driver))
+        // 由于腾出了Driver占用的资源，所以对其他Application和Driver进行调度
         schedule()
       case None =>
         logWarning(s"Asked to remove unknown driver: $driverId")

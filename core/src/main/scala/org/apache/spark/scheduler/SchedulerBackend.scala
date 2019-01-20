@@ -23,10 +23,12 @@ package org.apache.spark.scheduler
  * machines become available and can launch tasks on them.
  */
 private[spark] trait SchedulerBackend {
+  // 与当前job相关联的应用程序的身份标识
   private val appId = "spark-application-" + System.currentTimeMillis
 
   def start(): Unit
   def stop(): Unit
+  // 给调度池中所有Task分配资源
   def reviveOffers(): Unit
   def defaultParallelism(): Int
 

@@ -43,18 +43,22 @@ public class OneForOneStreamManager extends StreamManager {
 
   /** State of a single stream. */
   private static class StreamState {
-    final String appId;
-    final Iterator<ManagedBuffer> buffers;
+    final String appId; // 请求流所属的应用程序ID。此属性只有在ExternalShuffleClient启用后才会用到
+    final Iterator<ManagedBuffer> buffers; // ManagedBuffer的缓存
 
     // The channel associated to the stream
+    // 与当前流相关联的Channel
     Channel associatedChannel = null;
 
     // Used to keep track of the index of the buffer that the user has retrieved, just to ensure
     // that the caller only requests each chunk one at a time, in order.
+    // 为了保证客户端按顺序每次请求一个块，所有就要此属性跟踪客户端当前接受到的ManagedBuffer的索引
     int curChunk = 0;
 
     StreamState(String appId, Iterator<ManagedBuffer> buffers) {
+
       this.appId = appId;
+
       this.buffers = Preconditions.checkNotNull(buffers);
     }
   }
@@ -62,7 +66,9 @@ public class OneForOneStreamManager extends StreamManager {
   public OneForOneStreamManager() {
     // For debugging purposes, start with a random stream id to help identifying different streams.
     // This does not need to be globally unique, only unique to this class.
+    // 用于生成数据流的标识，类型为AtomicLong
     nextStreamId = new AtomicLong((long) new Random().nextInt(Integer.MAX_VALUE) * 1000);
+    // 维护streamId与StreamState之间的映射关系的缓存
     streams = new ConcurrentHashMap<>();
   }
 
@@ -76,6 +82,7 @@ public class OneForOneStreamManager extends StreamManager {
   @Override
   public ManagedBuffer getChunk(long streamId, int chunkIndex) {
     StreamState state = streams.get(streamId);
+    // 如果要获取的块的索引与StreamState的curChunk不想等，则说明顺序有问题。
     if (chunkIndex != state.curChunk) {
       throw new IllegalStateException(String.format(
         "Received out-of-order chunk index %s (expected %s)", chunkIndex, state.curChunk));

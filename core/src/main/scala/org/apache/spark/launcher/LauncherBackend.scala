@@ -31,9 +31,12 @@ import org.apache.spark.util.{ThreadUtils, Utils}
  */
 private[spark] abstract class LauncherBackend {
 
+  // 读取与LauncherServer建立的Socket连接上的消息的线程
   private var clientThread: Thread = _
   private var connection: BackendConnection = _
+  // LauncherBackend的最后一次状态
   private var lastState: SparkAppHandle.State = _
+  // 是否与LauncherServer建立了Socket连接的状态
   @volatile private var _isConnected = false
 
   def connect(): Unit = {

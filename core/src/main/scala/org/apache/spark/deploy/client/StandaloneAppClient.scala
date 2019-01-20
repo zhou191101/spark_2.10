@@ -63,15 +63,20 @@ private[spark] class StandaloneAppClient(
 
     private var master: Option[RpcEndpointRef] = None
     // To avoid calling listener.disconnected() multiple times
+    // 是否已经与Master断开连接
     private var alreadyDisconnected = false
     // To avoid calling listener.dead() multiple times
+    // 表示ClientEndPoint是否已经死掉
     private val alreadyDead = new AtomicBoolean(false)
+    // 用于保存registerMasterThreadPool执行的向哥哥Master注册Application的任务返回的Future
     private val registerMasterFutures = new AtomicReference[Array[JFuture[_]]]
+    // 用于持有向registrationRetryThread提交关于注册的定时调度返回的ScheduledFuture
     private val registrationRetryTimer = new AtomicReference[JScheduledFuture[_]]
 
     // A thread pool for registering with masters. Because registering with a master is a blocking
     // action, this thread pool must be able to create "masterRpcAddresses.size" threads at the same
     // time so that we can register with all masters.
+    // 用于向master注册application的线程池
     private val registerMasterThreadPool = ThreadUtils.newDaemonCachedThreadPool(
       "appclient-register-master-threadpool",
       masterRpcAddresses.length // Make sure we can register with all masters at the same time
@@ -121,16 +126,20 @@ private[spark] class StandaloneAppClient(
      * nthRetry means this is the nth attempt to register with master.
      */
     private def registerWithMaster(nthRetry: Int) {
+      // 向所以的Master尝试注册Application
       registerMasterFutures.set(tryRegisterAllMasters())
       registrationRetryTimer.set(registrationRetryThread.schedule(new Runnable {
         override def run(): Unit = {
+          // 如果已经注册成功，那么取消向Master注册Application
           if (registered.get) {
             registerMasterFutures.get.foreach(_.cancel(true))
             registerMasterThreadPool.shutdownNow()
+            // 重试次数超过限制，标记ClientEndPoint死亡
           } else if (nthRetry >= REGISTRATION_RETRIES) {
             markDead("All masters are unresponsive! Giving up.")
           } else {
             registerMasterFutures.get.foreach(_.cancel(true))
+            // 向Matser注册application的重试
             registerWithMaster(nthRetry + 1)
           }
         }
@@ -269,6 +278,7 @@ private[spark] class StandaloneAppClient(
 
   def start() {
     // Just launch an rpcEndpoint; it will call back into the listener.
+    // 向SparkContext的SparkEnv的RpcEnv注册ClientEndPoint，进而引起对ClientEndPoint的启动和向Master注册Application
     endpoint.set(rpcEnv.setupEndpoint("AppClient", new ClientEndpoint(rpcEnv)))
   }
 

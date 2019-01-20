@@ -164,6 +164,7 @@ private[spark] class BlockManager(
     blockTransferService.init(this)
     shuffleClient.init(appId)
 
+    // 设置block的复制策略
     blockReplicationPolicy = {
       val priorityClass = conf.get(
         "spark.storage.replication.policy", classOf[RandomBlockReplicationPolicy].getName)
@@ -173,6 +174,7 @@ private[spark] class BlockManager(
       ret
     }
 
+    // 生成当前BlockManager的BlockManagerId
     val id =
       BlockManagerId(executorId, blockTransferService.hostName, blockTransferService.port, None)
 
@@ -183,6 +185,7 @@ private[spark] class BlockManager(
 
     blockManagerId = if (idFromMaster != null) idFromMaster else id
 
+    //
     shuffleServerId = if (externalShuffleServiceEnabled) {
       logInfo(s"external shuffle service port = $externalShuffleServicePort")
       BlockManagerId(executorId, blockTransferService.hostName, externalShuffleServicePort)
@@ -191,6 +194,7 @@ private[spark] class BlockManager(
     }
 
     // Register Executors' configuration with the local shuffle service, if one should exist.
+    // 启用了外部shuffle服务，并且当前BlockManager所在节点不是Driver时，需要注册外部的Shuffle服务
     if (externalShuffleServiceEnabled && !blockManagerId.isDriver) {
       registerWithExternalShuffleServer()
     }
@@ -239,6 +243,7 @@ private[spark] class BlockManager(
   private def reportAllBlocks(): Unit = {
     logInfo(s"Reporting ${blockInfoManager.size} blocks to the master.")
     for ((blockId, info) <- blockInfoManager.entries) {
+      // 获取block的状态信息
       val status = getCurrentBlockStatus(blockId, info)
       if (info.tellMaster && !tryToReportBlockStatus(blockId, status)) {
         logError(s"Failed to report $blockId to master; giving up.")
@@ -257,6 +262,7 @@ private[spark] class BlockManager(
     // TODO: We might need to rate limit re-registering.
     logInfo(s"BlockManager $blockManagerId re-registering with master")
     master.registerBlockManager(blockManagerId, maxMemory, slaveEndpoint)
+    // 报告所有的Block信息
     reportAllBlocks()
   }
 
@@ -495,6 +501,7 @@ private[spark] class BlockManager(
         new ChunkedByteBuffer(
           shuffleBlockResolver.getBlockData(blockId.asInstanceOf[ShuffleBlockId]).nioByteBuffer()))
     } else {
+      // 非shuffleBlock，首先获取block的读锁，然后调用doGetLocalBytes方法获取block数据
       blockInfoManager.lockForReading(blockId).map { info => doGetLocalBytes(blockId, info) }
     }
   }
@@ -569,6 +576,7 @@ private[spark] class BlockManager(
     require(blockId != null, "BlockId is null")
     var runningFailureCount = 0
     var totalFailureCount = 0
+    // 获取block所在的所有位置信息序列locations
     val locations = getLocations(blockId)
     val maxFetchFailures = locations.size
     var locationIterator = locations.iterator
@@ -576,6 +584,7 @@ private[spark] class BlockManager(
       val loc = locationIterator.next()
       logDebug(s"Getting remote block $blockId from $loc")
       val data = try {
+        // 以同步方式从远端下载block
         blockTransferService.fetchBlockSync(
           loc.host, loc.port, loc.executorId, blockId.toString).nioByteBuffer()
       } catch {
@@ -583,6 +592,7 @@ private[spark] class BlockManager(
           runningFailureCount += 1
           totalFailureCount += 1
 
+          // 已经做了最大的努力但是还是未下载成功
           if (totalFailureCount >= maxFetchFailures) {
             // Give up trying anymore locations. Either we've tried all of the original locations,
             // or we've refreshed the list of locations from the master, and have still
@@ -599,6 +609,7 @@ private[spark] class BlockManager(
           // large number of stale entries causing a large number of retries that may
           // take a significant amount of time. To get rid of these stale entries
           // we refresh the block locations after a certain number of fetch failures
+          // 刷新block所在的所有位置信息
           if (runningFailureCount >= maxFailuresBeforeLocationRefresh) {
             locationIterator = getLocations(blockId).iterator
             logDebug(s"Refreshed locations from the driver " +
@@ -870,6 +881,7 @@ private[spark] class BlockManager(
 
     val putBlockInfo = {
       val newInfo = new BlockInfo(level, classTag, tellMaster)
+      // 获取block的写锁
       if (blockInfoManager.lockNewBlockForWriting(blockId, newInfo)) {
         newInfo
       } else {
@@ -889,12 +901,16 @@ private[spark] class BlockManager(
       exceptionWasThrown = false
       if (res.isEmpty) {
         // the block was successfully stored
+        // 执行锁降级或者释放锁
         if (keepReadLock) {
+          // 需要在保持读锁的情况下，将写锁降级为读锁
           blockInfoManager.downgradeLock(blockId)
         } else {
+          // 在不需要保持锁的情况下，释放所有锁
           blockInfoManager.unlock(blockId)
         }
       } else {
+        // block存储失败，移除此block
         removeBlockInternal(blockId, tellMaster = false)
         logWarning(s"Putting block $blockId failed")
       }

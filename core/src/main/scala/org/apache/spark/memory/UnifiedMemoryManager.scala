@@ -46,8 +46,8 @@ import org.apache.spark.storage.BlockId
  */
 private[spark] class UnifiedMemoryManager private[memory] (
     conf: SparkConf,
-    val maxHeapMemory: Long,
-    onHeapStorageRegionSize: Long,
+    val maxHeapMemory: Long,// 最大的堆内存。大小为系统可用内存与spark.memory.fraction的属性值（默认0.6）的乘积
+    onHeapStorageRegionSize: Long,// 用于存储的堆内存大小
     numCores: Int)
   extends MemoryManager(
     conf,
@@ -162,12 +162,14 @@ private[spark] class UnifiedMemoryManager private[memory] (
         offHeapStorageMemoryPool,
         maxOffHeapMemory)
     }
+    // numBytes不能大于可以存储的最大空间
     if (numBytes > maxMemory) {
       // Fail fast if the block simply won't fit
       logInfo(s"Will not store $blockId as the required space ($numBytes bytes) exceeds our " +
         s"memory limit ($maxMemory bytes)")
       return false
     }
+    // 存储内存池空间不足，到计算内存池中去借用空间
     if (numBytes > storagePool.memoryFree) {
       // There is not enough free memory in the storage pool, so try to borrow free memory from
       // the execution pool.

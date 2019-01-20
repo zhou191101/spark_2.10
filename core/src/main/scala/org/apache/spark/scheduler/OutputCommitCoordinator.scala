@@ -59,6 +59,7 @@ private[spark] class OutputCommitCoordinator(conf: SparkConf, isDriver: Boolean)
    *
    * Access to this map should be guarded by synchronizing on the OutputCommitCoordinator instance.
    */
+    // 缓存stage的各个分区的任务尝试
   private val authorizedCommittersByStage = mutable.Map[StageId, Array[TaskAttemptNumber]]()
 
   /**
@@ -85,6 +86,7 @@ private[spark] class OutputCommitCoordinator(conf: SparkConf, isDriver: Boolean)
       stage: StageId,
       partition: PartitionId,
       attemptNumber: TaskAttemptNumber): Boolean = {
+    // 询问是否有权限将stage指定的分区输出提交到HDFS上
     val msg = AskPermissionToCommitOutput(stage, partition, attemptNumber)
     coordinatorRef match {
       case Some(endpointRef) =>

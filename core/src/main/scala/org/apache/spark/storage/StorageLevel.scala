@@ -83,8 +83,10 @@ class StorageLevel private(
       false
   }
 
+  // 对当前的StorageLevel是否有效
   def isValid: Boolean = (useMemory || useDisk) && (replication > 0)
 
+  // 将当前StorageLevel转换为整形表示。
   def toInt: Int = {
     var ret = 0
     if (_useDisk) {

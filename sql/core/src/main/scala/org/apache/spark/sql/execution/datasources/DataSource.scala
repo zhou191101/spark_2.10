@@ -73,11 +73,11 @@ import org.apache.spark.util.Utils
  */
 case class DataSource(
     sparkSession: SparkSession,
-    className: String,
-    paths: Seq[String] = Nil,
-    userSpecifiedSchema: Option[StructType] = None,
-    partitionColumns: Seq[String] = Seq.empty,
-    bucketSpec: Option[BucketSpec] = None,
+    className: String,// 此名称用于决定要使用的类
+    paths: Seq[String] = Nil,// 数据源的多个路径
+    userSpecifiedSchema: Option[StructType] = None,// 用户指定的StructType
+    partitionColumns: Seq[String] = Seq.empty,// 分区字段的序列
+    bucketSpec: Option[BucketSpec] = None,// 是一种用于将数据集分解为更多可管理部分的技术
     options: Map[String, String] = Map.empty,
     catalogTable: Option[CatalogTable] = None) extends Logging {
 
@@ -85,6 +85,7 @@ case class DataSource(
 
   lazy val providingClass: Class[_] = DataSource.lookupDataSource(className)
   lazy val sourceInfo = sourceSchema()
+  // 忽略大小写选项配置
   private val caseInsensitiveOptions = new CaseInsensitiveMap(options)
 
   /**
@@ -541,6 +542,7 @@ object DataSource {
 
   /** Given a provider name, look up the data source class definition. */
   def lookupDataSource(provider: String): Class[_] = {
+    // 从backwardCompatibilityMap查找指定的数据源provider1
     val provider1 = backwardCompatibilityMap.getOrElse(provider, provider)
     val provider2 = s"$provider1.DefaultSource"
     val loader = Utils.getContextOrSparkClassLoader

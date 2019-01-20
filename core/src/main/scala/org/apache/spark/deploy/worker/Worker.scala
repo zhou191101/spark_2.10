@@ -59,11 +59,13 @@ private[deploy] class Worker(
   assert (port > 0)
 
   // A scheduled executor used to send messages at the specified time.
+  // 用于发送消息的消息调度执行器
   private val forwordMessageScheduler =
     ThreadUtils.newDaemonSingleThreadScheduledExecutor("worker-forward-message-scheduler")
 
   // A separated thread to clean up the workDir. Used to provide the implicit parameter of `Future`
   // methods.
+  // 用于清理worker的工作目录
   private val cleanupThreadExecutor = ExecutionContext.fromExecutorService(
     ThreadUtils.newDaemonSingleThreadExecutor("worker-cleanup-thread"))
 
@@ -79,21 +81,27 @@ private[deploy] class Worker(
   // the same time.
   private val INITIAL_REGISTRATION_RETRIES = 6
   private val TOTAL_REGISTRATION_RETRIES = INITIAL_REGISTRATION_RETRIES + 10
+  // 为了确保尝试的时间间隔不至于过小的下边界
   private val FUZZ_MULTIPLIER_INTERVAL_LOWER_BOUND = 0.500
+  // 范围在0.5~1.5之间，加入随机数是为了避免各个worker在同一时间发送心跳
   private val REGISTRATION_RETRY_FUZZ_MULTIPLIER = {
     val randomNumberGenerator = new Random(UUID.randomUUID.getMostSignificantBits)
     randomNumberGenerator.nextDouble + FUZZ_MULTIPLIER_INTERVAL_LOWER_BOUND
   }
+  // 前6次尝试的时间间隔
   private val INITIAL_REGISTRATION_RETRY_INTERVAL_SECONDS = (math.round(10 *
     REGISTRATION_RETRY_FUZZ_MULTIPLIER))
+  // 最后10次尝试的时间间隔
   private val PROLONGED_REGISTRATION_RETRY_INTERVAL_SECONDS = (math.round(60
     * REGISTRATION_RETRY_FUZZ_MULTIPLIER))
 
+  // 是否对旧的Application产生的文件夹及文件进行清理
   private val CLEANUP_ENABLED = conf.getBoolean("spark.worker.cleanup.enabled", false)
   // How often worker will clean up old app folders
   private val CLEANUP_INTERVAL_MILLIS =
     conf.getLong("spark.worker.cleanup.interval", 60 * 30) * 1000
   // TTL for app folders/data;  after TTL expires it will be cleaned up
+  // application产生的文件夹及文件保存的时间。默认为7天
   private val APP_DATA_RETENTION_SECONDS =
     conf.getLong("spark.worker.cleanup.appDataTtl", 7 * 24 * 3600)
 
@@ -122,6 +130,7 @@ private[deploy] class Worker(
   val appDirectories = new HashMap[String, Seq[String]]
   val finishedApps = new HashSet[String]
 
+  // 保留的executor数量
   val retainedExecutors = conf.getInt("spark.worker.ui.retainedExecutors",
     WorkerWebUI.DEFAULT_RETAINED_EXECUTORS)
   val retainedDrivers = conf.getInt("spark.worker.ui.retainedDrivers",
@@ -139,6 +148,7 @@ private[deploy] class Worker(
   private var connectionAttemptCount = 0
 
   private val metricsSystem = MetricsSystem.createMetricsSystem("worker", conf, securityMgr)
+  // 有关worker的度量来源
   private val workerSource = new WorkerSource(this)
 
   private var registerMasterFutures: Array[JFuture[_]] = null
@@ -362,6 +372,7 @@ private[deploy] class Worker(
         logInfo("Successfully registered with master " + masterRef.address.toSparkURL)
         registered = true
         changeMaster(masterRef, masterWebUiUrl)
+        // 定时发送心跳
         forwordMessageScheduler.scheduleAtFixedRate(new Runnable {
           override def run(): Unit = Utils.tryLogNonFatalError {
             self.send(SendHeartbeat)
@@ -370,6 +381,7 @@ private[deploy] class Worker(
         if (CLEANUP_ENABLED) {
           logInfo(
             s"Worker cleanup enabled; old application directories will be deleted in: $workDir")
+          // 定时清理工作目录
           forwordMessageScheduler.scheduleAtFixedRate(new Runnable {
             override def run(): Unit = Utils.tryLogNonFatalError {
               self.send(WorkDirCleanup)
@@ -380,6 +392,7 @@ private[deploy] class Worker(
         val execs = executors.values.map { e =>
           new ExecutorDescription(e.appId, e.execId, e.cores, e.state)
         }
+        // 汇报状态
         masterRef.send(WorkerLatestState(workerId, execs.toList, drivers.keys.toSeq))
 
       case RegisterWorkerFailed(message) =>

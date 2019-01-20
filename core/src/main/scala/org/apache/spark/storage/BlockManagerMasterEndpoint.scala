@@ -32,15 +32,18 @@ import org.apache.spark.storage.BlockManagerMessages._
 import org.apache.spark.util.{ThreadUtils, Utils}
 
 /**
- * BlockManagerMasterEndpoint is an [[ThreadSafeRpcEndpoint]] on the master node to track statuses
- * of all slaves' block managers.
- */
+  * BlockManagerMasterEndpoint is an [[ThreadSafeRpcEndpoint]] on the master node to track statuses
+  * of all slaves' block managers.
+  *
+  * BlockManagerMasterEndpoint接收Driver或者Executor上BlockManagerMaster发送的消息，对所有对BlockManager统一管理
+  *
+  */
 private[spark]
 class BlockManagerMasterEndpoint(
-    override val rpcEnv: RpcEnv,
-    val isLocal: Boolean,
-    conf: SparkConf,
-    listenerBus: LiveListenerBus)
+                                  override val rpcEnv: RpcEnv,
+                                  val isLocal: Boolean,
+                                  conf: SparkConf,
+                                  listenerBus: LiveListenerBus)
   extends ThreadSafeRpcEndpoint with Logging {
 
   // Mapping from block manager id to the block manager's information.
@@ -50,11 +53,13 @@ class BlockManagerMasterEndpoint(
   private val blockManagerIdByExecutor = new mutable.HashMap[String, BlockManagerId]
 
   // Mapping from block id to the set of block managers that have the block.
+  // blockId与存储了此BlockId对应block对BlockManager的BlockManagerId之间对一对多关系缓存
   private val blockLocations = new JHashMap[BlockId, mutable.HashSet[BlockManagerId]]
 
   private val askThreadPool = ThreadUtils.newDaemonCachedThreadPool("block-manager-ask-thread-pool")
   private implicit val askExecutionContext = ExecutionContext.fromExecutorService(askThreadPool)
 
+  // 对集群所有节点的拓扑结构的映射
   private val topologyMapper = {
     val topologyMapperClassName = conf.get(
       "spark.storage.replication.topologyMapper", classOf[DefaultTopologyMapper].getName)
@@ -71,8 +76,8 @@ class BlockManagerMasterEndpoint(
     case RegisterBlockManager(blockManagerId, maxMemSize, slaveEndpoint) =>
       context.reply(register(blockManagerId, maxMemSize, slaveEndpoint))
 
-    case _updateBlockInfo @
-        UpdateBlockInfo(blockManagerId, blockId, storageLevel, deserializedSize, size) =>
+    case _updateBlockInfo@
+      UpdateBlockInfo(blockManagerId, blockId, storageLevel, deserializedSize, size) =>
       context.reply(updateBlockInfo(blockManagerId, blockId, storageLevel, deserializedSize, size))
       listenerBus.post(SparkListenerBlockUpdated(BlockUpdatedInfo(_updateBlockInfo)))
 
@@ -171,10 +176,10 @@ class BlockManagerMasterEndpoint(
   }
 
   /**
-   * Delegate RemoveBroadcast messages to each BlockManager because the master may not notified
-   * of all broadcast blocks. If removeFromDriver is false, broadcast blocks are only removed
-   * from the executors, but not from the driver.
-   */
+    * Delegate RemoveBroadcast messages to each BlockManager because the master may not notified
+    * of all broadcast blocks. If removeFromDriver is false, broadcast blocks are only removed
+    * from the executors, but not from the driver.
+    */
   private def removeBroadcast(broadcastId: Long, removeFromDriver: Boolean): Future[Seq[Int]] = {
     val removeMsg = RemoveBroadcast(broadcastId, removeFromDriver)
     val requiredBlockManagers = blockManagerInfo.values.filter { info =>
@@ -214,9 +219,9 @@ class BlockManagerMasterEndpoint(
   }
 
   /**
-   * Return true if the driver knows about the given block manager. Otherwise, return false,
-   * indicating that the block manager should re-register.
-   */
+    * Return true if the driver knows about the given block manager. Otherwise, return false,
+    * indicating that the block manager should re-register.
+    */
   private def heartbeatReceived(blockManagerId: BlockManagerId): Boolean = {
     if (!blockManagerInfo.contains(blockManagerId)) {
       blockManagerId.isDriver && !isLocal
@@ -245,7 +250,7 @@ class BlockManagerMasterEndpoint(
 
   // Return a map from the block manager id to max memory and remaining memory.
   private def memoryStatus: Map[BlockManagerId, (Long, Long)] = {
-    blockManagerInfo.map { case(blockManagerId, info) =>
+    blockManagerInfo.map { case (blockManagerId, info) =>
       (blockManagerId, (info.maxMem, info.remainingMem))
     }.toMap
   }
@@ -257,16 +262,16 @@ class BlockManagerMasterEndpoint(
   }
 
   /**
-   * Return the block's status for all block managers, if any. NOTE: This is a
-   * potentially expensive operation and should only be used for testing.
-   *
-   * If askSlaves is true, the master queries each block manager for the most updated block
-   * statuses. This is useful when the master is not informed of the given block by all block
-   * managers.
-   */
+    * Return the block's status for all block managers, if any. NOTE: This is a
+    * potentially expensive operation and should only be used for testing.
+    *
+    * If askSlaves is true, the master queries each block manager for the most updated block
+    * statuses. This is useful when the master is not informed of the given block by all block
+    * managers.
+    */
   private def blockStatus(
-      blockId: BlockId,
-      askSlaves: Boolean): Map[BlockManagerId, Future[Option[BlockStatus]]] = {
+                           blockId: BlockId,
+                           askSlaves: Boolean): Map[BlockManagerId, Future[Option[BlockStatus]]] = {
     val getBlockStatus = GetBlockStatus(blockId)
     /*
      * Rather than blocking on the block status query, master endpoint should simply return
@@ -278,23 +283,25 @@ class BlockManagerMasterEndpoint(
         if (askSlaves) {
           info.slaveEndpoint.ask[Option[BlockStatus]](getBlockStatus)
         } else {
-          Future { info.getStatus(blockId) }
+          Future {
+            info.getStatus(blockId)
+          }
         }
       (info.blockManagerId, blockStatusFuture)
     }.toMap
   }
 
   /**
-   * Return the ids of blocks present in all the block managers that match the given filter.
-   * NOTE: This is a potentially expensive operation and should only be used for testing.
-   *
-   * If askSlaves is true, the master queries each block manager for the most updated block
-   * statuses. This is useful when the master is not informed of the given block by all block
-   * managers.
-   */
+    * Return the ids of blocks present in all the block managers that match the given filter.
+    * NOTE: This is a potentially expensive operation and should only be used for testing.
+    *
+    * If askSlaves is true, the master queries each block manager for the most updated block
+    * statuses. This is useful when the master is not informed of the given block by all block
+    * managers.
+    */
   private def getMatchingBlockIds(
-      filter: BlockId => Boolean,
-      askSlaves: Boolean): Future[Seq[BlockId]] = {
+                                   filter: BlockId => Boolean,
+                                   askSlaves: Boolean): Future[Seq[BlockId]] = {
     val getMatchingBlockIds = GetMatchingBlockIds(filter)
     Future.sequence(
       blockManagerInfo.values.map { info =>
@@ -302,7 +309,9 @@ class BlockManagerMasterEndpoint(
           if (askSlaves) {
             info.slaveEndpoint.ask[Seq[BlockId]](getMatchingBlockIds)
           } else {
-            Future { info.blocks.asScala.keys.filter(filter).toSeq }
+            Future {
+              info.blocks.asScala.keys.filter(filter).toSeq
+            }
           }
         future
       }
@@ -310,14 +319,15 @@ class BlockManagerMasterEndpoint(
   }
 
   /**
-   * Returns the BlockManagerId with topology information populated, if available.
-   */
+    * Returns the BlockManagerId with topology information populated, if available.
+    */
   private def register(
-      idWithoutTopologyInfo: BlockManagerId,
-      maxMemSize: Long,
-      slaveEndpoint: RpcEndpointRef): BlockManagerId = {
+                        idWithoutTopologyInfo: BlockManagerId,
+                        maxMemSize: Long,
+                        slaveEndpoint: RpcEndpointRef): BlockManagerId = {
     // the dummy id is not expected to contain the topology information.
     // we get that info here and respond back with a more fleshed out block manager id
+    // 生成blockManagerId
     val id = BlockManagerId(
       idWithoutTopologyInfo.executorId,
       idWithoutTopologyInfo.host,
@@ -330,28 +340,31 @@ class BlockManagerMasterEndpoint(
         case Some(oldId) =>
           // A block manager of the same executor already exists, so remove it (assumed dead)
           logError("Got two different block manager registrations on same executor - "
-              + s" will replace old one $oldId with new one $id")
+            + s" will replace old one $oldId with new one $id")
           removeExecutor(id.executorId)
         case None =>
       }
       logInfo("Registering block manager %s with %s RAM, %s".format(
         id.hostPort, Utils.bytesToString(maxMemSize), id))
 
+      // 将executorId与新创建的BlockManagerId的对应关系添加到blockManagerIdByExecutor中
       blockManagerIdByExecutor(id.executorId) = id
 
+      // 将BlockManagerId与BlockManagerInfo的对应关系添加到缓存blockManagerInfo
       blockManagerInfo(id) = new BlockManagerInfo(
         id, System.currentTimeMillis(), maxMemSize, slaveEndpoint)
     }
+    // 向listenerBus投递SparkListenerBlockManagerAdded类型事件
     listenerBus.post(SparkListenerBlockManagerAdded(time, id, maxMemSize))
     id
   }
 
   private def updateBlockInfo(
-      blockManagerId: BlockManagerId,
-      blockId: BlockId,
-      storageLevel: StorageLevel,
-      memSize: Long,
-      diskSize: Long): Boolean = {
+                               blockManagerId: BlockManagerId,
+                               blockId: BlockId,
+                               storageLevel: StorageLevel,
+                               memSize: Long,
+                               diskSize: Long): Boolean = {
 
     if (!blockManagerInfo.contains(blockManagerId)) {
       if (blockManagerId.isDriver && !isLocal) {
@@ -396,7 +409,7 @@ class BlockManagerMasterEndpoint(
   }
 
   private def getLocationsMultipleBlockIds(
-      blockIds: Array[BlockId]): IndexedSeq[Seq[BlockManagerId]] = {
+                                            blockIds: Array[BlockId]): IndexedSeq[Seq[BlockManagerId]] = {
     blockIds.map(blockId => getLocations(blockId))
   }
 
@@ -404,15 +417,19 @@ class BlockManagerMasterEndpoint(
   private def getPeers(blockManagerId: BlockManagerId): Seq[BlockManagerId] = {
     val blockManagerIds = blockManagerInfo.keySet
     if (blockManagerIds.contains(blockManagerId)) {
-      blockManagerIds.filterNot { _.isDriver }.filterNot { _ == blockManagerId }.toSeq
+      blockManagerIds.filterNot {
+        _.isDriver
+      }.filterNot {
+        _ == blockManagerId
+      }.toSeq
     } else {
       Seq.empty
     }
   }
 
   /**
-   * Returns an [[RpcEndpointRef]] of the [[BlockManagerSlaveEndpoint]] for sending RPC messages.
-   */
+    * Returns an [[RpcEndpointRef]] of the [[BlockManagerSlaveEndpoint]] for sending RPC messages.
+    */
   private def getExecutorEndpointRef(executorId: String): Option[RpcEndpointRef] = {
     for (
       blockManagerId <- blockManagerIdByExecutor.get(executorId);
@@ -438,10 +455,10 @@ object BlockStatus {
 }
 
 private[spark] class BlockManagerInfo(
-    val blockManagerId: BlockManagerId,
-    timeMs: Long,
-    val maxMem: Long,
-    val slaveEndpoint: RpcEndpointRef)
+                                       val blockManagerId: BlockManagerId,
+                                       timeMs: Long,
+                                       val maxMem: Long,
+                                       val slaveEndpoint: RpcEndpointRef)
   extends Logging {
 
   private var _lastSeenMs: Long = timeMs
@@ -460,10 +477,10 @@ private[spark] class BlockManagerInfo(
   }
 
   def updateBlockInfo(
-      blockId: BlockId,
-      storageLevel: StorageLevel,
-      memSize: Long,
-      diskSize: Long) {
+                       blockId: BlockId,
+                       storageLevel: StorageLevel,
+                       memSize: Long,
+                       diskSize: Long) {
 
     updateLastSeenMs()
 

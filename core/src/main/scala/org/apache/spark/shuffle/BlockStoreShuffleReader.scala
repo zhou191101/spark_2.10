@@ -42,6 +42,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
 
   /** Read the combined key-values for this reduce task */
   override def read(): Iterator[Product2[K, C]] = {
+    // 对本地和远端对block块的获取
     val blockFetcherItr = new ShuffleBlockFetcherIterator(
       context,
       blockManager.shuffleClient,
@@ -52,6 +53,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
       SparkEnv.get.conf.getInt("spark.reducer.maxReqsInFlight", Int.MaxValue))
 
     // Wrap the streams for compression and encryption based on configuration
+    // 对各个block对输入流进行压缩和加密
     val wrappedStreams = blockFetcherItr.map { case (blockId, inputStream) =>
       serializerManager.wrapStream(blockId, inputStream)
     }
@@ -76,14 +78,15 @@ private[spark] class BlockStoreShuffleReader[K, C](
       context.taskMetrics().mergeShuffleReadMetrics())
 
     // An interruptible iterator must be used here in order to support task cancellation
+    // 创建可中断的迭代器
     val interruptibleIter = new InterruptibleIterator[(Any, Any)](context, metricIter)
 
     val aggregatedIter: Iterator[Product2[K, C]] = if (dep.aggregator.isDefined) {
-      if (dep.mapSideCombine) {
+      if (dep.mapSideCombine) {// 如果指定了聚合函数并允许在map端进行合并，在reduce端对数据进行聚合
         // We are reading values that are already combined
         val combinedKeyValuesIterator = interruptibleIter.asInstanceOf[Iterator[(K, C)]]
         dep.aggregator.get.combineCombinersByKey(combinedKeyValuesIterator, context)
-      } else {
+      } else {// 如果指定了聚合函数，但不允许在map端进行合并，在reduce端对数据进行缓存
         // We don't know the value type, but also don't care -- the dependency *should*
         // have made sure its compatible w/ this aggregator, which will convert the value
         // type to the combined type C
@@ -97,6 +100,7 @@ private[spark] class BlockStoreShuffleReader[K, C](
 
     // Sort the output if there is a sort ordering defined.
     dep.keyOrdering match {
+        // 如果指定了排序函数
       case Some(keyOrd: Ordering[K]) =>
         // Create an ExternalSorter to sort the data. Note that if spark.shuffle.spill is disabled,
         // the ExternalSorter won't spill to disk.

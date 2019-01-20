@@ -49,25 +49,31 @@ private[spark] abstract class Spillable[C](taskMemoryManager: TaskMemoryManager)
 
   // Initial threshold for the size of a collection before we start tracking its memory usage
   // For testing only
+  // 对内存使用进行跟踪的初始内存阈值，默认为5mb
   private[this] val initialMemoryThreshold: Long =
     SparkEnv.get.conf.getLong("spark.shuffle.spill.initialMemoryThreshold", 5 * 1024 * 1024)
 
   // Force this collection to spill when there are this many elements in memory
   // For testing only
+  // 集合中有太多元素时，强制将集合中的数据溢出到磁盘的阈值
   private[this] val numElementsForceSpillThreshold: Long =
     SparkEnv.get.conf.getLong("spark.shuffle.spill.numElementsForceSpillThreshold", Long.MaxValue)
 
   // Threshold for this collection's size in bytes before we start tracking its memory usage
   // To avoid a large number of small spills, initialize this to a value orders of magnitude > 0
+  // 对集合的内存使用进行跟踪的初始内存阈值
   @volatile private[this] var myMemoryThreshold = initialMemoryThreshold
 
   // Number of elements read from input since last spill
+  // 已经插入到集合的元素数量
   private[this] var _elementsRead = 0L
 
   // Number of bytes spilled in total
+  // 内存中的数据已经溢出到磁盘的字节总数
   @volatile private[this] var _memoryBytesSpilled = 0L
 
   // Number of spills
+  // 集合产生溢出的次数
   private[this] var _spillCount = 0
 
   /**
@@ -80,6 +86,7 @@ private[spark] abstract class Spillable[C](taskMemoryManager: TaskMemoryManager)
    */
   protected def maybeSpill(collection: C, currentMemory: Long): Boolean = {
     var shouldSpill = false
+    // 如果当前集合已经读取的元素是32的倍数，并且集合当前的内存大小大于等于myMemoryThreshold
     if (elementsRead % 32 == 0 && currentMemory >= myMemoryThreshold) {
       // Claim up to double our current memory from the shuffle memory pool
       val amountToRequest = 2 * currentMemory - myMemoryThreshold

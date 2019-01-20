@@ -34,7 +34,9 @@ private[spark] class MetricsConfig(conf: SparkConf) extends Logging {
   private val INSTANCE_REGEX = "^(\\*|[a-zA-Z]+)\\.(.+)".r
   private val DEFAULT_METRICS_CONF_FILENAME = "metrics.properties"
 
+  // 度量的属性信息
   private[metrics] val properties = new Properties()
+  // 每个实例的子属性
   private[metrics] var perInstanceSubProperties: mutable.HashMap[String, Properties] = null
 
   private def setDefaultProperties(prop: Properties) {
@@ -52,9 +54,11 @@ private[spark] class MetricsConfig(conf: SparkConf) extends Logging {
     // Add default properties in case there's no properties file
     setDefaultProperties(properties)
 
+    // 从文件中加载度量属性
     loadPropertiesFromFile(conf.getOption("spark.metrics.conf"))
 
     // Also look for the properties in provided Spark configuration
+    // 从SparkConf中查找以"spark.metrics.conf."为前缀的配置属性
     val prefix = "spark.metrics.conf."
     conf.getAll.foreach {
       case (k, v) if k.startsWith(prefix) =>

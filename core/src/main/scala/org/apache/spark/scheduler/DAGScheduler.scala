@@ -137,8 +137,10 @@ class DAGScheduler(
 
   private[scheduler] val nextJobId = new AtomicInteger(0)
   private[scheduler] def numTotalJobs: Int = nextJobId.get()
+  // 用于生成下一个stage的身份标识
   private val nextStageId = new AtomicInteger(0)
 
+  // job的身份标识和激活的job（activejob）之间的映射关系
   private[scheduler] val jobIdToStageIds = new HashMap[Int, HashSet[Int]]
   private[scheduler] val stageIdToStage = new HashMap[Int, Stage]
   /**
@@ -168,6 +170,8 @@ class DAGScheduler(
    *
    * All accesses to this map should be guarded by synchronizing on it (see SPARK-4454).
    */
+    // 用于缓存每个RDD的所有分区的位置信息。每个RDD的分区按照分区号作为索引存储到IndexedSeq。由于RDD的每个分区
+    // 作为一个Block以及存储体系的复制因素，因此RDD的每个分区的Block可能存在与多个节点的BlockManager上
   private val cacheLocs = new HashMap[Int, IndexedSeq[Seq[TaskLocation]]]
 
   // For tracking failed nodes, we use the MapOutputTracker's epoch number, which is sent with
@@ -187,6 +191,7 @@ class DAGScheduler(
   /** If enabled, FetchFailed will not cause stage retry, in order to surface the problem. */
   private val disallowStageRetryForTest = sc.getConf.getBoolean("spark.test.noStageRetry", false)
 
+  // 对失败的stage进行重试
   private val messageScheduler =
     ThreadUtils.newDaemonSingleThreadScheduledExecutor("dag-scheduler-message")
 
@@ -318,19 +323,23 @@ class DAGScheduler(
    */
   def createShuffleMapStage(shuffleDep: ShuffleDependency[_, _, _], jobId: Int): ShuffleMapStage = {
     val rdd = shuffleDep.rdd
+    // map 任务数量和rdd的分区数一致
     val numTasks = rdd.partitions.length
     val parents = getOrCreateParentStages(rdd, jobId)
     val id = nextStageId.getAndIncrement()
     val stage = new ShuffleMapStage(id, rdd, numTasks, parents, jobId, rdd.creationSite, shuffleDep)
 
+    // 更新刚创建的ShuffleMapStage的映射关系
     stageIdToStage(id) = stage
     shuffleIdToMapStage(shuffleDep.shuffleId) = stage
     updateJobIdStageIdMaps(jobId, stage)
 
+    // 查看是否已经存在shuffleId对应的MapStatus映射关系
     if (mapOutputTracker.containsShuffle(shuffleDep.shuffleId)) {
       // A previously run stage generated partitions for this shuffle, so for each output
       // that's still available, copy information about that output location to the new stage
       // (so we don't unnecessarily re-compute that data).
+      // 获取对MapStatus序列化后的字节数组
       val serLocs = mapOutputTracker.getSerializedMapOutputStatuses(shuffleDep.shuffleId)
       val locs = MapOutputTracker.deserializeMapStatuses(serLocs)
       (0 until locs.length).foreach { i =>
@@ -357,10 +366,14 @@ class DAGScheduler(
       partitions: Array[Int],
       jobId: Int,
       callSite: CallSite): ResultStage = {
+    // 获取所有父stage的列表，父stage主要是宽依赖对应的stage
     val parents = getOrCreateParentStages(rdd, jobId)
+    // 生成stage的身份标识
     val id = nextStageId.getAndIncrement()
     val stage = new ResultStage(id, rdd, func, partitions, parents, jobId, callSite)
+    // 将resultStage注册到stageIdToStage中
     stageIdToStage(id) = stage
+    // 更新job的身份标识与ResultStage及其所有祖先的映射关系
     updateJobIdStageIdMaps(jobId, stage)
     stage
   }
@@ -911,6 +924,7 @@ class DAGScheduler(
     if (jobId.isDefined) {
       logDebug("submitStage(" + stage + ")")
       if (!waitingStages(stage) && !runningStages(stage) && !failedStages(stage)) {
+        // 获取当前stage所有未提交的父stage
         val missing = getMissingParentStages(stage).sortBy(_.id)
         logDebug("missing: " + missing)
         if (missing.isEmpty) {
@@ -932,15 +946,18 @@ class DAGScheduler(
   private def submitMissingTasks(stage: Stage, jobId: Int) {
     logDebug("submitMissingTasks(" + stage + ")")
     // Get our pending tasks and remember them in our pendingTasks entry
+    // 由于当前stage的任务刚提交，因此需要清空便于记录需要计算的分区任务
     stage.pendingPartitions.clear()
 
     // First figure out the indexes of partition ids to compute.
+    // 找出当前stage中还未完成计算的分区的索引
     val partitionsToCompute: Seq[Int] = stage.findMissingPartitions()
 
     // Use the scheduling pool, job group, description, etc. from an ActiveJob associated
     // with this Stage
     val properties = jobIdToActiveJob(jobId).properties
 
+    // 标记当前stage为运行状态
     runningStages += stage
     // SparkListenerStageSubmitted should be posted before testing whether tasks are
     // serializable. If tasks are not serializable, a SparkListenerStageCompleted event
@@ -948,6 +965,7 @@ class DAGScheduler(
     // event.
     stage match {
       case s: ShuffleMapStage =>
+        // 启动当前stage的输出到hdfs的协调
         outputCommitCoordinator.stageStart(stage = s.id, maxPartitionId = s.numPartitions - 1)
       case s: ResultStage =>
         outputCommitCoordinator.stageStart(
@@ -956,6 +974,7 @@ class DAGScheduler(
     val taskIdToLocations: Map[Int, Seq[TaskLocation]] = try {
       stage match {
         case s: ShuffleMapStage =>
+          // 调用getPreferredLocs获取每一个分区的偏好位置
           partitionsToCompute.map { id => (id, getPreferredLocs(stage.rdd, id))}.toMap
         case s: ResultStage =>
           partitionsToCompute.map { id =>
@@ -965,13 +984,16 @@ class DAGScheduler(
       }
     } catch {
       case NonFatal(e) =>
+        // 发生异常，则开始新一次的尝试
         stage.makeNewStageAttempt(partitionsToCompute.size)
+        // 向事件总线投递事件监听
         listenerBus.post(SparkListenerStageSubmitted(stage.latestInfo, properties))
         abortStage(stage, s"Task creation failed: $e\n${Utils.exceptionString(e)}", Some(e))
         runningStages -= stage
         return
     }
 
+    // 开始stage的执行尝试
     stage.makeNewStageAttempt(partitionsToCompute.size, taskIdToLocations.values.toSeq)
     listenerBus.post(SparkListenerStageSubmitted(stage.latestInfo, properties))
 
@@ -979,20 +1001,23 @@ class DAGScheduler(
     // Broadcasted binary for the task, used to dispatch tasks to executors. Note that we broadcast
     // the serialized copy of the RDD and for each task we will deserialize it, which means each
     // task gets a different copy of the RDD. This provides stronger isolation between tasks that
-    // might modify state of objects referenced in their closures. This is necessary in Hadoop
+    // might modify state of objects referenced in their closures. This is  necessary in Hadoop
     // where the JobConf/Configuration object is not thread-safe.
     var taskBinary: Broadcast[Array[Byte]] = null
     try {
       // For ShuffleMapTask, serialize and broadcast (rdd, shuffleDep).
       // For ResultTask, serialize and broadcast (rdd, func).
       val taskBinaryBytes: Array[Byte] = stage match {
+          // 对stage的rdd和shuffleDependency进行序列化
         case stage: ShuffleMapStage =>
           JavaUtils.bufferToArray(
             closureSerializer.serialize((stage.rdd, stage.shuffleDep): AnyRef))
+          // 对stage的rdd和对rdd的分区进行计算的函数func进行序列化
         case stage: ResultStage =>
           JavaUtils.bufferToArray(closureSerializer.serialize((stage.rdd, stage.func): AnyRef))
       }
 
+      // 广播上一步生成的序列化对象
       taskBinary = sc.broadcast(taskBinaryBytes)
     } catch {
       // In the case of a failure during serialization, abort the stage.
@@ -1011,6 +1036,7 @@ class DAGScheduler(
     val tasks: Seq[Task[_]] = try {
       stage match {
         case stage: ShuffleMapStage =>
+          // 为每一个分区创建一个shuffleMapTask
           partitionsToCompute.map { id =>
             val locs = taskIdToLocations(id)
             val part = stage.rdd.partitions(id)
@@ -1020,6 +1046,7 @@ class DAGScheduler(
           }
 
         case stage: ResultStage =>
+          // 为每一个分区创建一个resultTask
           partitionsToCompute.map { id =>
             val p: Int = stage.partitions(id)
             val part = stage.rdd.partitions(p)
@@ -1038,8 +1065,10 @@ class DAGScheduler(
 
     if (tasks.size > 0) {
       logInfo("Submitting " + tasks.size + " missing tasks from " + stage + " (" + stage.rdd + ")")
+      // 如果创建了至少一个task，那么将此task处理的分区索引加入到pendingPartitions中
       stage.pendingPartitions ++= tasks.map(_.partitionId)
       logDebug("New pending partitions: " + stage.pendingPartitions)
+      // 创建TaskSet并调用submitTasks方法提交此TaskSet
       taskScheduler.submitTasks(new TaskSet(
         tasks.toArray, stage.id, stage.latestInfo.attemptId, jobId, properties))
       stage.latestInfo.submissionTime = Some(clock.getTimeMillis())
@@ -1059,6 +1088,7 @@ class DAGScheduler(
       }
       logDebug(debugString)
 
+      // 提交当前stage的子stage
       submitWaitingChildStages(stage)
     }
   }
@@ -1154,9 +1184,11 @@ class DAGScheduler(
               case Some(job) =>
                 if (!job.finished(rt.outputId)) {
                   updateAccumulators(event)
+                  // 将activeJob的finished对应的分区设置为完成状态
                   job.finished(rt.outputId) = true
                   job.numFinished += 1
                   // If the whole job has finished, remove it
+                  // 如果activejob的所有任务都完成，则调用markStageAsFinished方法标记当前的stage完成
                   if (job.numFinished == job.numPartitions) {
                     markStageAsFinished(resultStage)
                     cleanupStateForJobAndIndependentStages(job)
@@ -1167,6 +1199,7 @@ class DAGScheduler(
                   // taskSucceeded runs some user code that might throw an exception. Make sure
                   // we are resilient against that.
                   try {
+                    // 处理每个job的执行结果
                     job.listener.taskSucceeded(rt.outputId, event.result)
                   } catch {
                     case e: Exception =>
@@ -1187,11 +1220,12 @@ class DAGScheduler(
             if (failedEpoch.contains(execId) && smt.epoch <= failedEpoch(execId)) {
               logInfo(s"Ignoring possibly bogus $smt completion from executor $execId")
             } else {
+              // 将分区任务的MapStatus追加到Stage的outputlocs中
               shuffleStage.addOutputLoc(smt.partitionId, status)
             }
 
             if (runningStages.contains(shuffleStage) && shuffleStage.pendingPartitions.isEmpty) {
-              markStageAsFinished(shuffleStage)
+              markStageAsFinished(shuffleStage)// 将ShuffleMapStage标记为完成
               logInfo("looking for newly runnable stages")
               logInfo("running: " + runningStages)
               logInfo("waiting: " + waitingStages)
@@ -1202,7 +1236,8 @@ class DAGScheduler(
               // locations with holes (from when we detected the error) and will need the
               // epoch incremented to refetch them.
               // TODO: Only increment the epoch number if this is not the first time
-              //       we registered these map outputs.
+              //       we registered these map outputs
+              // 将当前stage的shuffleid和outputLoc中的Mapstatus注册到mapOutputTracker的mapStatus中去
               mapOutputTracker.registerMapOutputs(
                 shuffleStage.shuffleDep.shuffleId,
                 shuffleStage.outputLocInMapOutputTrackerFormat(),
@@ -1216,6 +1251,7 @@ class DAGScheduler(
                 logInfo("Resubmitting " + shuffleStage + " (" + shuffleStage.name +
                   ") because some of its tasks had failed: " +
                   shuffleStage.findMissingPartitions().mkString(", "))
+                // 有任务失败了，这时需要再次提交此ShuffleMapStage
                 submitStage(shuffleStage)
               } else {
                 // Mark any map-stage jobs waiting on this stage as finished
@@ -1529,7 +1565,7 @@ class DAGScheduler(
    * Recursive implementation for getPreferredLocs.
    *
    * This method is thread-safe because it only accesses DAGScheduler state through thread-safe
-   * methods (getCacheLocs()); please be careful when modifying this method, because any new
+   * methods (getCachceLocs()); please be careful when modifying this method, because any new
    * DAGScheduler state accessed by it may require additional synchronization.
    */
   private def getPreferredLocsInternal(
@@ -1538,6 +1574,7 @@ class DAGScheduler(
       visited: HashSet[(RDD[_], Int)]): Seq[TaskLocation] = {
     // If the partition has already been visited, no need to re-visit.
     // This avoids exponential path exploration.  SPARK-695
+    // 避免对RDD的指定分区的重复访问
     if (!visited.add((rdd, partition))) {
       // Nil has already been returned for previously visited partitions.
       return Nil
@@ -1548,6 +1585,7 @@ class DAGScheduler(
       return cached
     }
     // If the RDD has some placement preferences (as is the case for input RDDs), get those
+    // 获取RDD指定分区的偏好位置
     val rddPrefs = rdd.preferredLocations(rdd.partitions(partition)).toList
     if (rddPrefs.nonEmpty) {
       return rddPrefs.map(TaskLocation(_))
@@ -1556,6 +1594,7 @@ class DAGScheduler(
     // If the RDD has narrow dependencies, pick the first partition of the first narrow dependency
     // that has any placement preferences. Ideally we would choose based on transfer sizes,
     // but this will do for now.
+    // 以窄依赖的RDD的同一分区的偏好位置作为当前RDD的此分区的偏好位置，以首先找到的偏好位置作为当前RDD的偏好位置返回
     rdd.dependencies.foreach {
       case n: NarrowDependency[_] =>
         for (inPart <- n.getParents(partition)) {

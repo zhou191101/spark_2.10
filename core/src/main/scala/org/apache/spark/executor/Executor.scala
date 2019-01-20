@@ -103,11 +103,15 @@ private[spark] class Executor(
 
   // Max size of direct result. If task result is bigger than this, we use the block manager
   // to send the result back.
+  // 直接结果的最大大小。默认128MB
   private val maxDirectResultSize = Math.min(
     conf.getSizeAsBytes("spark.task.maxDirectResultSize", 1L << 20),
     RpcUtils.maxMessageSizeBytes(conf))
 
   // Limit of bytes for total size of results (default is 1GB)
+  // 结果的最大限制，默认1GB。
+  // Task运行的结果如果超过maxResultSize，则会被删除。
+  // Task运行的结果如果大于maxDirectResultSize且小于maxResultSize，则会写入本地存储系统
   private val maxResultSize = Utils.getMaxResultSize(conf)
 
   // Maintains the list of running tasks.
@@ -241,20 +245,26 @@ private[spark] class Executor(
       Thread.currentThread.setContextClassLoader(replClassLoader)
       val ser = env.closureSerializer.newInstance()
       logInfo(s"Running $taskName (TID $taskId)")
+      // 更新task为running
       execBackend.statusUpdate(taskId, TaskState.RUNNING, EMPTY_BYTE_BUFFER)
       var taskStart: Long = 0
       var taskStartCpu: Long = 0
+      // 计算JVM进程执行GC已经花费的时间
       startGCTime = computeTotalGcTime()
 
       try {
+        // 对序列化的Task进行反序列化
         val (taskFiles, taskJars, taskProps, taskBytes) =
           Task.deserializeWithDependencies(serializedTask)
 
         // Must be set before updateDependencies() is called, in case fetching dependencies
         // requires access to properties contained within (e.g. for access control).
+        // Task所需的属性信息放入ThreadLocal
         Executor.taskDeserializationProps.set(taskProps)
 
+        // 从taskFiles和taskJars中获取所需依赖
         updateDependencies(taskFiles, taskJars)
+        // 反序列化得到Task实例
         task = ser.deserialize[Task[Any]](taskBytes, Thread.currentThread.getContextClassLoader)
         task.localProperties = taskProps
         task.setTaskMemoryManager(taskMemoryManager)
@@ -289,6 +299,7 @@ private[spark] class Executor(
           val releasedLocks = env.blockManager.releaseAllLocksForTask(taskId)
           val freedMemory = taskMemoryManager.cleanUpAllAllocatedMemory()
 
+          // 如果当前任务尝试有内存溢出，则抛出异常或打印警告信息
           if (freedMemory > 0 && !threwException) {
             val errMsg = s"Managed memory leak detected; size = $freedMemory bytes, TID = $taskId"
             if (conf.getBoolean("spark.unsafe.exceptionOnMemoryLeak", false)) {
@@ -298,6 +309,7 @@ private[spark] class Executor(
             }
           }
 
+          // 如果存在block锁无法释放，则抛出异常或打印警告信息
           if (releasedLocks.nonEmpty && !threwException) {
             val errMsg =
               s"${releasedLocks.size} block locks were not released by TID = $taskId:\n" +
@@ -350,9 +362,11 @@ private[spark] class Executor(
             logWarning(s"Finished $taskName (TID $taskId). Result is larger than maxResultSize " +
               s"(${Utils.bytesToString(resultSize)} > ${Utils.bytesToString(maxResultSize)}), " +
               s"dropping it.")
+            // 将结果的大小序列化为serializedResult，并不会保存执行结果
             ser.serialize(new IndirectTaskResult[Any](TaskResultBlockId(taskId), resultSize))
           } else if (resultSize > maxDirectResultSize) {
             val blockId = TaskResultBlockId(taskId)
+            // 将结果写入本地存储
             env.blockManager.putBytes(
               blockId,
               new ChunkedByteBuffer(serializedDirectResult.duplicate()),
@@ -362,10 +376,12 @@ private[spark] class Executor(
             ser.serialize(new IndirectTaskResult[Any](blockId, resultSize))
           } else {
             logInfo(s"Finished $taskName (TID $taskId). $resultSize bytes result sent to driver")
+            // 直接序列化为serializedResult
             serializedDirectResult
           }
         }
 
+        // 将状态更新为finished
         execBackend.statusUpdate(taskId, TaskState.FINISHED, serializedResult)
 
       } catch {
@@ -558,9 +574,11 @@ private[spark] class Executor(
    * Schedules a task to report heartbeat and partial metrics for active tasks to driver.
    */
   private def startDriverHeartbeater(): Unit = {
+    // 发送心跳的时间间隔
     val intervalMs = conf.getTimeAsMs("spark.executor.heartbeatInterval", "10s")
 
     // Wait a random interval so the heartbeats don't end up in sync
+    // 获取心跳定时器第一次执行的时间延迟initialDelay
     val initialDelay = intervalMs + (math.random * intervalMs).asInstanceOf[Int]
 
     val heartbeatTask = new Runnable() {

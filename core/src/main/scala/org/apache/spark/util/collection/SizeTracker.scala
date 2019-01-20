@@ -22,27 +22,34 @@ import scala.collection.mutable
 import org.apache.spark.util.SizeEstimator
 
 /**
- * A general interface for collections to keep track of their estimated sizes in bytes.
- * We sample with a slow exponential back-off using the SizeEstimator to amortize the time,
- * as each call to SizeEstimator is somewhat expensive (order of a few milliseconds).
- */
+  * A general interface for collections to keep track of their estimated sizes in bytes.
+  * We sample with a slow exponential back-off using the SizeEstimator to amortize the time,
+  * as each call to SizeEstimator is somewhat expensive (order of a few milliseconds).
+  */
 private[spark] trait SizeTracker {
 
   import SizeTracker._
 
   /**
-   * Controls the base of the exponential which governs the rate of sampling.
-   * E.g., a value of 2 would mean we sample at 1, 2, 4, 8, ... elements.
-   */
+    * Controls the base of the exponential which governs the rate of sampling.
+    * E.g., a value of 2 would mean we sample at 1, 2, 4, 8, ... elements.
+    * 采样增长的速率。例如，速率为2时，分别对1，2，4，8，……位置上的元素进行采样。
+    */
   private val SAMPLE_GROWTH_RATE = 1.1
 
-  /** Samples taken since last resetSamples(). Only the last two are kept for extrapolation. */
+  /**
+    * Samples taken since last resetSamples(). Only the last two are kept for extrapolation.
+    * 样本队列，最后两个样本将用于估算
+    *
+    * */
   private val samples = new mutable.Queue[Sample]
 
   /** The average number of bytes per update between our last two samples. */
+  // 平均每次更新的字节数
   private var bytesPerUpdate: Double = _
 
   /** Total number of insertions and updates into the map since the last resetSamples(). */
+  // 更新操作的总次数
   private var numUpdates: Long = _
 
   /** The value of 'numUpdates' at which we will take our next sample. */
@@ -51,9 +58,9 @@ private[spark] trait SizeTracker {
   resetSamples()
 
   /**
-   * Reset samples collected so far.
-   * This should be called after the collection undergoes a dramatic change in size.
-   */
+    * Reset samples collected so far.
+    * This should be called after the collection undergoes a dramatic change in size.
+    */
   protected def resetSamples(): Unit = {
     numUpdates = 1
     nextSampleNum = 1
@@ -62,8 +69,8 @@ private[spark] trait SizeTracker {
   }
 
   /**
-   * Callback to be invoked after every update.
-   */
+    * Callback to be invoked after every update.
+    */
   protected def afterUpdate(): Unit = {
     numUpdates += 1
     if (nextSampleNum == numUpdates) {
@@ -72,11 +79,13 @@ private[spark] trait SizeTracker {
   }
 
   /**
-   * Take a new sample of the current collection's size.
-   */
+    * Take a new sample of the current collection's size.
+    */
   private def takeSample(): Unit = {
+    // 估算集合的大小并作为样本
     samples.enqueue(Sample(SizeEstimator.estimate(this), numUpdates))
     // Only use the last two samples to extrapolate
+    // 保留样本队列的最后两个样本
     if (samples.size > 2) {
       samples.dequeue()
     }
@@ -86,13 +95,15 @@ private[spark] trait SizeTracker {
       // If fewer than 2 samples, assume no change
       case _ => 0
     }
+    // 计算每次更新的字节数
     bytesPerUpdate = math.max(0, bytesDelta)
+    // 根据采样增长速率计算nextSampleNum的值
     nextSampleNum = math.ceil(numUpdates * SAMPLE_GROWTH_RATE).toLong
   }
 
   /**
-   * Estimate the current size of the collection in bytes. O(1) time.
-   */
+    * Estimate the current size of the collection in bytes. O(1) time.
+    */
   def estimateSize(): Long = {
     assert(samples.nonEmpty)
     val extrapolatedDelta = bytesPerUpdate * (numUpdates - samples.last.numUpdates)
@@ -101,5 +112,7 @@ private[spark] trait SizeTracker {
 }
 
 private object SizeTracker {
+
   case class Sample(size: Long, numUpdates: Long)
+
 }

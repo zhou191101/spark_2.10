@@ -30,6 +30,7 @@ import org.apache.spark.unsafe.Platform;
  */
 public class HeapMemoryAllocator implements MemoryAllocator {
 
+  // 是关于MemoryBlock的若引用的缓冲池，用于page页的分配
   @GuardedBy("this")
   private final Map<Long, LinkedList<WeakReference<MemoryBlock>>> bufferPoolsBySize =
     new HashMap<>();
@@ -39,6 +40,8 @@ public class HeapMemoryAllocator implements MemoryAllocator {
   /**
    * Returns true if allocations of the given size should go through the pooling mechanism and
    * false otherwise.
+   * 用于判断对于指定大小的MemoryBlock，是否需要采用池化机制
+   * 当要分配的内存大于等于1MB时，需要从bufferPoolsBySize中获取MemoryBlock
    */
   private boolean shouldPool(long size) {
     // Very small allocations are less likely to benefit from pooling.
@@ -47,9 +50,12 @@ public class HeapMemoryAllocator implements MemoryAllocator {
 
   @Override
   public MemoryBlock allocate(long size) throws OutOfMemoryError {
+    // 如果采用池化机制
     if (shouldPool(size)) {
       synchronized (this) {
+        // 从bufferPoolsBySize中获取指定大小的MemoryBlock
         final LinkedList<WeakReference<MemoryBlock>> pool = bufferPoolsBySize.get(size);
+        // 如果不存在指定大小的MemoryBlock，则将指定大小的弱引用池从bufferPoolsBySize中移除
         if (pool != null) {
           while (!pool.isEmpty()) {
             final WeakReference<MemoryBlock> blockReference = pool.pop();
@@ -84,6 +90,7 @@ public class HeapMemoryAllocator implements MemoryAllocator {
           pool = new LinkedList<>();
           bufferPoolsBySize.put(size, pool);
         }
+        // 将MemoryBlock的弱引用放入bufferPoolsBySize中
         pool.add(new WeakReference<>(memory));
       }
     } else {

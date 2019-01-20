@@ -32,7 +32,7 @@ private[spark] class TaskContextImpl(
     val stageId: Int,
     val partitionId: Int,
     override val taskAttemptId: Long,
-    override val attemptNumber: Int,
+    override val attemptNumber: Int,// 任务尝试号
     override val taskMemoryManager: TaskMemoryManager,
     localProperties: Properties,
     @transient private val metricsSystem: MetricsSystem,
@@ -75,6 +75,7 @@ private[spark] class TaskContextImpl(
     // Process failure callbacks in the reverse order of registration
     onFailureCallbacks.reverse.foreach { listener =>
       try {
+        // 将错误信息交给任务失败监听器处理
         listener.onTaskFailure(this, error)
       } catch {
         case e: Throwable =>

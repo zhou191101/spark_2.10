@@ -54,7 +54,10 @@ private[spark] abstract class MemoryManager(
   onHeapStorageMemoryPool.incrementPoolSize(onHeapStorageMemory)
   onHeapExecutionMemoryPool.incrementPoolSize(onHeapExecutionMemory)
 
+  // 堆外内存的最大值
   protected[this] val maxOffHeapMemory = conf.getSizeAsBytes("spark.memory.offHeap.size", 0)
+  // 用于存储的堆外内存的大小。可以通过spark.memory.storageFraction属性（默认0.5）修改存储占用堆外内存的分数来影响
+  // offHeapStorageMemory的大小
   protected[this] val offHeapStorageMemory =
     (maxOffHeapMemory * conf.getDouble("spark.memory.storageFraction", 0.5)).toLong
 

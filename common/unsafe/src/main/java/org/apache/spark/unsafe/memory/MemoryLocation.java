@@ -25,9 +25,14 @@ import javax.annotation.Nullable;
  */
 public class MemoryLocation {
 
+  // 处于堆内存模式时，数据作为对象存储在jvm堆上，此时的obj不为空
+  // 处于堆外内存模式时，数据存储在jvm的堆外内存中，因而不会再jvm中存在对象
   @Nullable
   Object obj;
 
+  // 定位数据。
+  // 当处于堆内存模式时，首先从堆内找到对象，然后使用offset定位数据的具体位置
+  // 处于堆外内存模式时，则直接使用offset从堆外内存中定位
   long offset;
 
   public MemoryLocation(@Nullable Object obj, long offset) {

@@ -25,10 +25,11 @@ import java.util.Properties
  */
 private[spark] class TaskSet(
     val tasks: Array[Task[_]],
-    val stageId: Int,
-    val stageAttemptId: Int,
-    val priority: Int,
+    val stageId: Int, // task所属的stage的身份标识
+    val stageAttemptId: Int,// stage尝试的身份标识
+    val priority: Int,// 优先级，通常以jobid作为优先级
     val properties: Properties) {
+  // task的身份标识
   val id: String = stageId + "." + stageAttemptId
 
   override def toString: String = "TaskSet " + id

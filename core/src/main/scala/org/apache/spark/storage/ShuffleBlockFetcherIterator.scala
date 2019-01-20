@@ -50,14 +50,16 @@ import org.apache.spark.util.Utils
  * @param maxBytesInFlight max size (in bytes) of remote blocks to fetch at any given point.
  * @param maxReqsInFlight max number of remote requests to fetch blocks at any given point.
  */
+// 用于获取多个Block的迭代器。如果block在本地，那么从本地的BlockManager获取；如果Block在远端，那么通过ShuffleClient
+// 请求从远端节点上的BlockTransferService获取
 private[spark]
 final class ShuffleBlockFetcherIterator(
     context: TaskContext,
     shuffleClient: ShuffleClient,
     blockManager: BlockManager,
-    blocksByAddress: Seq[(BlockManagerId, Seq[(BlockId, Long)])],
-    maxBytesInFlight: Long,
-    maxReqsInFlight: Int)
+    blocksByAddress: Seq[(BlockManagerId, Seq[(BlockId, Long)])],// 要获取的Block与所在地址的关系
+    maxBytesInFlight: Long,// 一批请求请求的最大字节数
+    maxReqsInFlight: Int)// 一批请求的最多请求数
   extends Iterator[(BlockId, InputStream)] with Logging {
 
   import ShuffleBlockFetcherIterator._
@@ -157,6 +159,7 @@ final class ShuffleBlockFetcherIterator(
   private[this] def sendRequest(req: FetchRequest) {
     logDebug("Sending request for %d blocks (%s) from %s".format(
       req.blocks.size, Utils.bytesToString(req.size), req.address.hostPort))
+    // 将请求的所有block的大小累加到bytesInFlight
     bytesInFlight += req.size
     reqsInFlight += 1
 
@@ -165,6 +168,7 @@ final class ShuffleBlockFetcherIterator(
     val remainingBlocks = new HashSet[String]() ++= sizeMap.keys
     val blockIds = req.blocks.map(_._1.toString)
 
+    // 批量下载远端的block
     val address = req.address
     shuffleClient.fetchBlocks(address.host, address.port, address.executorId, blockIds.toArray,
       new BlockFetchingListener {
@@ -172,7 +176,7 @@ final class ShuffleBlockFetcherIterator(
           // Only add the buffer to results queue if the iterator is not zombie,
           // i.e. cleanup() has not been called yet.
           ShuffleBlockFetcherIterator.this.synchronized {
-            if (!isZombie) {
+            if (!isZombie) {// 结果封装为SuccessFetchResult放入results中
               // Increment the ref count because we need to pass this to a different thread.
               // This needs to be released after use.
               buf.retain()
@@ -197,22 +201,26 @@ final class ShuffleBlockFetcherIterator(
     // Make remote requests at most maxBytesInFlight / 5 in length; the reason to keep them
     // smaller than maxBytesInFlight is to allow multiple, parallel fetches from up to 5
     // nodes, rather than blocking on reading output from one node.
+    // 每个远程请求的最大尺寸。
     val targetRequestSize = math.max(maxBytesInFlight / 5, 1L)
     logDebug("maxBytesInFlight: " + maxBytesInFlight + ", targetRequestSize: " + targetRequestSize)
 
     // Split local and remote blocks. Remote blocks are further split into FetchRequests of size
     // at most maxBytesInFlight in order to limit the amount of data in flight.
+    // 远程获取的累加缓存，用于保证每个远程请求的尺寸不超过targetRequestSize的限制
     val remoteRequests = new ArrayBuffer[FetchRequest]
 
     // Tracks total number of blocks (including zero sized blocks)
+    // 统计所有的block的总大小
     var totalBlocks = 0
     for ((address, blockInfos) <- blocksByAddress) {
       totalBlocks += blockInfos.size
+      // 本地的block
       if (address.executorId == blockManager.blockManagerId.executorId) {
         // Filter out zero-sized blocks
         localBlocks ++= blockInfos.filter(_._2 != 0).map(_._1)
-        numBlocksToFetch += localBlocks.size
-      } else {
+        numBlocksToFetch += localBlocks.size // 将所有大小不为0的BlockId存入localblock
+      } else {// 远端block
         val iterator = blockInfos.iterator
         var curRequestSize = 0L
         var curBlocks = new ArrayBuffer[(BlockId, Long)]
@@ -236,6 +244,7 @@ final class ShuffleBlockFetcherIterator(
           }
         }
         // Add in the final request
+        // 对剩余的Block新建FetchRequest放入remoteRequests
         if (curBlocks.nonEmpty) {
           remoteRequests += new FetchRequest(address, curBlocks)
         }
@@ -272,24 +281,27 @@ final class ShuffleBlockFetcherIterator(
 
   private[this] def initialize(): Unit = {
     // Add a task completion callback (called in both success case and failure case) to cleanup.
+    // 给TaskContextImpl添加任务完成的监听器
     context.addTaskCompletionListener(_ => cleanup())
 
     // Split local and remote blocks.
+    // 划分从本地读取和需要从远程读取的Block的请求
     val remoteRequests = splitLocalRemoteBlocks()
     // Add the remote requests into our queue in a random order
+    // 将FetchRequest随机排序后存入fetchRequests
     fetchRequests ++= Utils.randomize(remoteRequests)
     assert ((0 == reqsInFlight) == (0 == bytesInFlight),
       "expected reqsInFlight = 0 but found reqsInFlight = " + reqsInFlight +
       ", expected bytesInFlight = 0 but found bytesInFlight = " + bytesInFlight)
 
     // Send out initial requests for blocks, up to our maxBytesInFlight
-    fetchUpToMaxBytes()
+    fetchUpToMaxBytes()// 发送请求
 
     val numFetches = remoteRequests.size - fetchRequests.size
     logInfo("Started " + numFetches + " remote fetches in" + Utils.getUsedTimeMs(startTime))
 
     // Get Local Blocks
-    fetchLocalBlocks()
+    fetchLocalBlocks() // 获取本地block
     logDebug("Got local blocks in " + Utils.getUsedTimeMs(startTime))
   }
 

@@ -76,6 +76,7 @@ private[spark] abstract class Task[T](
       attemptNumber: Int,
       metricsSystem: MetricsSystem): T = {
     SparkEnv.get.blockManager.registerTask(taskAttemptId)
+    // 创建任务尝试的上下文
     context = new TaskContextImpl(
       stageId,
       partitionId,
@@ -85,6 +86,7 @@ private[spark] abstract class Task[T](
       localProperties,
       metricsSystem,
       metrics)
+    // 将任务尝试的上下文保存到ThreadLocal中
     TaskContext.setTaskContext(context)
     taskThread = Thread.currentThread()
 
@@ -92,10 +94,12 @@ private[spark] abstract class Task[T](
       kill(interruptThread = false)
     }
 
+    // 创建调用者上下文
     new CallerContext("TASK", appId, appAttemptId, jobId, Option(stageId), Option(stageAttemptId),
       Option(taskAttemptId), Option(attemptNumber)).setCurrentContext()
 
     try {
+      // 调用子类实现的runTask方法运行任务尝试
       runTask(context)
     } catch {
       case e: Throwable =>
@@ -111,6 +115,7 @@ private[spark] abstract class Task[T](
       // Call the task completion callbacks.
       context.markTaskCompleted()
       try {
+        // 释放任务尝试所占用的堆内存和堆外内存
         Utils.tryLogNonFatalError {
           // Release memory used by this thread for unrolling blocks
           SparkEnv.get.blockManager.memoryStore.releaseUnrollMemoryForThisTask(MemoryMode.ON_HEAP)
@@ -123,6 +128,7 @@ private[spark] abstract class Task[T](
           memoryManager.synchronized { memoryManager.notifyAll() }
         }
       } finally {
+        // 移除ThreadLocal中保存当前任务尝试线程的上下文
         TaskContext.unset()
       }
     }

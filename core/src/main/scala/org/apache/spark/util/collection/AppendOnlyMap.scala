@@ -46,22 +46,30 @@ class AppendOnlyMap[K, V](initialCapacity: Int = 64)
     s"Can't make capacity bigger than ${MAXIMUM_CAPACITY} elements")
   require(initialCapacity >= 1, "Invalid initial capacity")
 
+  // 负载因子
   private val LOAD_FACTOR = 0.7
 
+  // data数组当前的容量。
   private var capacity = nextPowerOf2(initialCapacity)
+  // 计算数据存放位置的掩码
   private var mask = capacity - 1
+  // 计算房前已经放入data的key与聚合值的数量
   private var curSize = 0
+  // data数据容量增长的阈值
   private var growThreshold = (LOAD_FACTOR * capacity).toInt
 
   // Holds keys and values in the same array for memory locality; specifically, the order of
   // elements is key0, value0, key1, value1, key2, value2, etc.
+  // 用于保存key的聚合值的数组
   private var data = new Array[AnyRef](2 * capacity)
 
   // Treat the null key differently so we can use nulls in "data" to represent empty items.
+  // data数组中是否已经有了null值
   private var haveNullValue = false
   private var nullValue: V = null.asInstanceOf[V]
 
   // Triggered by destructiveSortedIterator; the underlying data array may no longer be used
+  // 表示data数组不再使用
   private var destroyed = false
   private val destructionMessage = "Map state is invalid from destructive sorting!"
 
@@ -104,15 +112,21 @@ class AppendOnlyMap[K, V](initialCapacity: Int = 64)
     var pos = rehash(key.hashCode) & mask
     var i = 1
     while (true) {
+      // 获取curkey
       val curKey = data(2 * pos)
+      // 如果curkey为null，说明data数组的2*pos的索引位置还未放元素，k是首次聚合到data数组中，
       if (curKey.eq(null)) {
         data(2 * pos) = k
         data(2 * pos + 1) = value.asInstanceOf[AnyRef]
         incrementSize()  // Since we added a new key
         return
+        // 如果curkry不等于null并且等于k，说明data数组的2*pos的索引位置已经放置了元素且元素就是k，所以将value更新
+        // 到data（2*pos+1）的位置后返回
       } else if (k.eq(curKey) || k.equals(curKey)) {
         data(2 * pos + 1) = value.asInstanceOf[AnyRef]
         return
+        // 如果curkey不等于null并且不等于key，说明data数组的2*pos的索引位置已经放置了元素，但元素不是k，那么从
+        // data数组的pos位置向后找，直到某个位置的索引值与mask按位&运算后的新位置的key符合第一步或者第二步的条件
       } else {
         val delta = i
         pos = (pos + delta) & mask
@@ -128,6 +142,7 @@ class AppendOnlyMap[K, V](initialCapacity: Int = 64)
   def changeValue(key: K, updateFunc: (Boolean, V) => V): V = {
     assert(!destroyed, destructionMessage)
     val k = key.asInstanceOf[AnyRef]
+    // 如果数组中还没有null值，那么调用incrementSize（）方法扩充容量
     if (k.eq(null)) {
       if (!haveNullValue) {
         incrementSize()
@@ -215,15 +230,18 @@ class AppendOnlyMap[K, V](initialCapacity: Int = 64)
     // capacity < MAXIMUM_CAPACITY (2 ^ 29) so capacity * 2 won't overflow
     val newCapacity = capacity * 2
     require(newCapacity <= MAXIMUM_CAPACITY, s"Can't contain more than ${growThreshold} elements")
+    // 创建一个容量为当前2倍的新数组
     val newData = new Array[AnyRef](2 * newCapacity)
     val newMask = newCapacity - 1
     // Insert all our old values into the new array. Note that because our old keys are
     // unique, there's no need to check for equality here when we insert.
     var oldPos = 0
+    // 老数组中的元素拷贝到新数组中的指定位置
     while (oldPos < capacity) {
       if (!data(2 * oldPos).eq(null)) {
         val key = data(2 * oldPos)
         val value = data(2 * oldPos + 1)
+        // 使用新的mask重新rehash
         var newPos = rehash(key.hashCode) & newMask
         var i = 1
         var keepGoing = true
@@ -262,6 +280,7 @@ class AppendOnlyMap[K, V](initialCapacity: Int = 64)
     // Pack KV pairs into the front of the underlying array
     var keyIndex, newIndex = 0
     while (keyIndex < capacity) {
+      // 将data数组中的元素向前（即向着索引为0方向）整理排列
       if (data(2 * keyIndex) != null) {
         data(2 * newIndex) = data(2 * keyIndex)
         data(2 * newIndex + 1) = data(2 * keyIndex + 1)

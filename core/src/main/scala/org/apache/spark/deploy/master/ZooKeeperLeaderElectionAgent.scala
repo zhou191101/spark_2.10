@@ -30,6 +30,7 @@ private[master] class ZooKeeperLeaderElectionAgent(val masterInstance: LeaderEle
   val WORKING_DIR = conf.get("spark.deploy.zookeeper.dir", "/spark") + "/leader_election"
 
   private var zk: CuratorFramework = _
+  // 使用zookeeper进行领导选举的客户端
   private var leaderLatch: LeaderLatch = _
   private var status = LeadershipStatus.NOT_LEADER
 

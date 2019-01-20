@@ -65,14 +65,14 @@ private[spark] class IndexShuffleBlockResolver(
   def removeDataByMap(shuffleId: Int, mapId: Int): Unit = {
     var file = getDataFile(shuffleId, mapId)
     if (file.exists()) {
-      if (!file.delete()) {
+      if (!file.delete()) {// 删除数据文件
         logWarning(s"Error deleting data ${file.getPath()}")
       }
     }
 
     file = getIndexFile(shuffleId, mapId)
     if (file.exists()) {
-      if (!file.delete()) {
+      if (!file.delete()) {// 删除索引文件
         logWarning(s"Error deleting index ${file.getPath()}")
       }
     }
@@ -138,7 +138,9 @@ private[spark] class IndexShuffleBlockResolver(
       mapId: Int,
       lengths: Array[Long],
       dataTmp: File): Unit = {
+    // 获取指定shuffle中指定map任务输出的索引文件
     val indexFile = getIndexFile(shuffleId, mapId)
+    // 根据索引文件获取临时索引文件的路径
     val indexTmp = Utils.tempFileWith(indexFile)
     try {
       val out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(indexTmp)))
@@ -146,6 +148,7 @@ private[spark] class IndexShuffleBlockResolver(
         // We take in lengths of each block, need to convert it to offsets.
         var offset = 0L
         out.writeLong(offset)
+        // 遍历每个block的长度，并作为偏移量写入临时索引文件
         for (length <- lengths) {
           offset += length
           out.writeLong(offset)
@@ -154,11 +157,14 @@ private[spark] class IndexShuffleBlockResolver(
         out.close()
       }
 
+      // 获取指定shuffle中指定map任务输出的数据文件
       val dataFile = getDataFile(shuffleId, mapId)
       // There is only one IndexShuffleBlockResolver per executor, this synchronization make sure
       // the following check and rename are atomic.
       synchronized {
+        // 对给定的索引文件和数据文件是否匹配进行检查
         val existingLengths = checkIndexAndDataFile(indexFile, dataFile, lengths.length)
+        // 如果索引文件和数据文件不匹配，将临时索引文件和临时数据文件删除
         if (existingLengths != null) {
           // Another attempt for the same task has already written our map outputs successfully,
           // so just use the existing partition lengths and delete our temporary map outputs.
@@ -198,6 +204,7 @@ private[spark] class IndexShuffleBlockResolver(
 
     val in = new DataInputStream(new FileInputStream(indexFile))
     try {
+      // 跳过与当前reduce任务无关的字节
       ByteStreams.skipFully(in, blockId.reduceId * 8)
       val offset = in.readLong()
       val nextOffset = in.readLong()

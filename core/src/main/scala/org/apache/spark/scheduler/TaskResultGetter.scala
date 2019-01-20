@@ -30,8 +30,8 @@ import org.apache.spark.serializer.SerializerInstance
 import org.apache.spark.util.{LongAccumulator, ThreadUtils, Utils}
 
 /**
- * Runs a thread pool that deserializes and remotely fetches (if necessary) task results.
- */
+  * Runs a thread pool that deserializes and remotely fetches (if necessary) task results.
+  */
 private[spark] class TaskResultGetter(sparkEnv: SparkEnv, scheduler: TaskSchedulerImpl)
   extends Logging {
 
@@ -54,14 +54,20 @@ private[spark] class TaskResultGetter(sparkEnv: SparkEnv, scheduler: TaskSchedul
     }
   }
 
+  /*
+  * 对于ResultTask来说，DirectTaskResult的value的却是Task的执行结果
+  * 对于ShuffleMapTask而言，实际是任务的状态
+  * */
   def enqueueSuccessfulTask(
-      taskSetManager: TaskSetManager,
-      tid: Long,
-      serializedData: ByteBuffer): Unit = {
+                             taskSetManager: TaskSetManager,
+                             tid: Long,
+                             serializedData: ByteBuffer): Unit = {
     getTaskResultExecutor.execute(new Runnable {
       override def run(): Unit = Utils.logUncaughtExceptions {
         try {
+          // 对Task的执行结果反序列化
           val (result, size) = serializer.get().deserialize[TaskResult[_]](serializedData) match {
+            // Task执行结果保存在DirectTaskResult中，对DirectTaskResult保存的数据进行反序列化就可以得到
             case directResult: DirectTaskResult[_] =>
               if (!taskSetManager.canFetchMoreResults(serializedData.limit())) {
                 return
@@ -78,7 +84,9 @@ private[spark] class TaskResultGetter(sparkEnv: SparkEnv, scheduler: TaskSchedul
                 return
               }
               logDebug("Fetching indirect task result for TID %s".format(tid))
+
               scheduler.handleTaskGettingResult(taskSetManager, tid)
+              // 从运行Task的节点上下载Block，最后对下载到的数据反序列化等到Task的执行结果
               val serializedTaskResult = sparkEnv.blockManager.getRemoteBytes(blockId)
               if (!serializedTaskResult.isDefined) {
                 /* We won't be able to get the task result if the machine that ran the task failed
@@ -99,6 +107,7 @@ private[spark] class TaskResultGetter(sparkEnv: SparkEnv, scheduler: TaskSchedul
           // Set the task result size in the accumulator updates received from the executors.
           // We need to do this here on the driver because if we did this on the executors then
           // we would have to serialize the result again after updating the size.
+          // 更新Task的执行结果的累加器中结果的大小
           result.accumUpdates = result.accumUpdates.map { a =>
             if (a.name == Some(InternalAccumulator.RESULT_SIZE)) {
               val acc = a.asInstanceOf[LongAccumulator]
@@ -125,8 +134,8 @@ private[spark] class TaskResultGetter(sparkEnv: SparkEnv, scheduler: TaskSchedul
   }
 
   def enqueueFailedTask(taskSetManager: TaskSetManager, tid: Long, taskState: TaskState,
-    serializedData: ByteBuffer) {
-    var reason : TaskFailedReason = UnknownReason
+                        serializedData: ByteBuffer) {
+    var reason: TaskFailedReason = UnknownReason
     try {
       getTaskResultExecutor.execute(new Runnable {
         override def run(): Unit = Utils.logUncaughtExceptions {
@@ -144,12 +153,13 @@ private[spark] class TaskResultGetter(sparkEnv: SparkEnv, scheduler: TaskSchedul
                 "Could not deserialize TaskEndReason: ClassNotFound with classloader " + loader)
             case ex: Exception => // No-op
           }
+          // 将失败的Task重新放入待处理的Task列表，并通知DAGScheduler重新调度
           scheduler.handleFailedTask(taskSetManager, tid, taskState, reason)
         }
       })
     } catch {
       case e: RejectedExecutionException if sparkEnv.isStopped =>
-        // ignore it
+      // ignore it
     }
   }
 

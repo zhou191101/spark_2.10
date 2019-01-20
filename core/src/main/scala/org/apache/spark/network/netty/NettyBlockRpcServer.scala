@@ -56,22 +56,27 @@ class NettyBlockRpcServer(
 
     message match {
       case openBlocks: OpenBlocks =>
+        // 取出OpenBlocks消息携带的BlockId数组，调用getBlockData获取数组中每一个BlockIid对应的Block
         val blocks: Seq[ManagedBuffer] =
           openBlocks.blockIds.map(BlockId.apply).map(blockManager.getBlockData)
         val streamId = streamManager.registerStream(appId, blocks.iterator.asJava)
         logTrace(s"Registered streamId $streamId with ${blocks.size} buffers")
+        // 创建StreamHandle消息，并通过响应上下文回复客户端
         responseContext.onSuccess(new StreamHandle(streamId, blocks.size).toByteBuffer)
 
       case uploadBlock: UploadBlock =>
         // StorageLevel and ClassTag are serialized as bytes using our JavaSerializer.
+        // 对于UploadBlock消息携带的元数据metadata进行反序列化，得到存储级别和类型标记
         val (level: StorageLevel, classTag: ClassTag[_]) = {
           serializer
             .newInstance()
             .deserialize(ByteBuffer.wrap(uploadBlock.metadata))
             .asInstanceOf[(StorageLevel, ClassTag[_])]
         }
+        // 将UploadBlock携带的元数据metadata封装为NioManagedBuffer
         val data = new NioManagedBuffer(ByteBuffer.wrap(uploadBlock.blockData))
         val blockId = BlockId(uploadBlock.blockId)
+        // 将Block存入本地存储体系
         blockManager.putBlockData(blockId, data, level, classTag)
         responseContext.onSuccess(ByteBuffer.allocate(0))
     }

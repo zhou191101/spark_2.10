@@ -34,7 +34,8 @@ private[memory] class StorageMemoryPool(
     lock: Object,
     memoryMode: MemoryMode
   ) extends MemoryPool(lock) with Logging {
-
+  // Spark使用的堆内存和堆外内存都是逻辑上的区分
+  // 前者使用的是系统分配给JVM堆的一部分，后者使用sun.misc.Unsafe的APi分配的系统内存
   private[this] val poolName: String = memoryMode match {
     case MemoryMode.ON_HEAP => "on-heap storage"
     case MemoryMode.OFF_HEAP => "off-heap storage"
@@ -47,6 +48,7 @@ private[memory] class StorageMemoryPool(
     _memoryUsed
   }
 
+  // 当前StorageMemoryPool所关联的MemoryStore
   private var _memoryStore: MemoryStore = _
   def memoryStore: MemoryStore = {
     if (_memoryStore == null) {
@@ -88,6 +90,7 @@ private[memory] class StorageMemoryPool(
     assert(numBytesToAcquire >= 0)
     assert(numBytesToFree >= 0)
     assert(memoryUsed <= poolSize)
+    // 如果所需的内存大于空闲的内存，那么就需要腾出numBytesToFree指定大小的内存空间
     if (numBytesToFree > 0) {
       memoryStore.evictBlocksToFreeSpace(Some(blockId), numBytesToFree, memoryMode)
     }
@@ -101,6 +104,7 @@ private[memory] class StorageMemoryPool(
     enoughMemory
   }
 
+  // 释放指定大小的内存
   def releaseMemory(size: Long): Unit = lock.synchronized {
     if (size > _memoryUsed) {
       logWarning(s"Attempted to release $size bytes of storage " +

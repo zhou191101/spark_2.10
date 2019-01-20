@@ -77,9 +77,11 @@ final class ShuffleExternalSorter extends MemoryConsumer {
    * Force this sorter to spill when there are this many elements in memory. The default value is
    * 1024 * 1024 * 1024, which allows the maximum size of the pointer array to be 8G.
    */
+  // 磁盘溢出的元素数量。默认1MB
   private final long numElementsForSpillThreshold;
 
   /** The buffer size to use when writing spills using DiskBlockObjectWriter */
+  // 创建的DiskBlockObjectWriter内部文件缓冲大小。默认32kb
   private final int fileBufferSizeBytes;
 
   /**
@@ -88,14 +90,18 @@ final class ShuffleExternalSorter extends MemoryConsumer {
    * this might not be necessary if we maintained a pool of re-usable pages in the TaskMemoryManager
    * itself).
    */
+  // 已经分配的page列表
   private final LinkedList<MemoryBlock> allocatedPages = new LinkedList<>();
 
+  // 溢出文件的元数据信息的列表
   private final LinkedList<SpillInfo> spills = new LinkedList<>();
 
   /** Peak memory used by this sorter so far, in bytes. **/
+  // 内存中数据结构大小的峰值
   private long peakMemoryUsedBytes;
 
   // These variables are reset after spilling:
+  // 用于在内存中对插入记录进行排序
   @Nullable private ShuffleInMemorySorter inMemSorter;
   @Nullable private MemoryBlock currentPage = null;
   private long pageCursor = -1;
@@ -251,8 +257,11 @@ final class ShuffleExternalSorter extends MemoryConsumer {
       spills.size(),
       spills.size() > 1 ? " times" : " time");
 
+    // 将内存中的数据进行排序后输出到磁盘
     writeSortedFile(false);
+    // 将所使用的page全部释放
     final long spillSize = freeMemory();
+    // 重置底层数组，以便于下次排序
     inMemSorter.reset();
     // Reset the in-memory sorter's pointer array only after freeing up the memory pages holding the
     // records. Otherwise, if the task is over allocated memory, then without freeing the memory
@@ -376,18 +385,25 @@ final class ShuffleExternalSorter extends MemoryConsumer {
       spill();
     }
 
+    // 检查是否有足够的空间将额外的记录插入到排序指针数组中，如果需要额外的空间，则增加数组的容量
+    // 如果无法获取所需的空间，则内存中的数据将被溢出到磁盘
     growPointerArrayIfNecessary();
     // Need 4 bytes to store the record length.
     final int required = length + 4;
+    // 检查是否有足够的空间，如果需要额外的空间，则申请分配新的page
     acquireNewPageIfNecessary(required);
 
     assert(currentPage != null);
     final Object base = currentPage.getBaseObject();
     final long recordAddress = taskMemoryManager.encodePageNumberAndOffset(currentPage, pageCursor);
+    // 向page所代表的内存块的起始地址写入数据的长度
     Platform.putInt(base, pageCursor, length);
     pageCursor += 4;
+    // 将数据拷贝到page中
     Platform.copyMemory(recordBase, recordOffset, base, pageCursor, length);
     pageCursor += length;
+    // 将记录的元数据信息存储到内部用的长整型数组中，便于排序。
+    // 其中高24为分区存储分区ID，中间13位存储页号，低27位存储偏移量
     inMemSorter.insertRecord(recordAddress, partitionId);
   }
 

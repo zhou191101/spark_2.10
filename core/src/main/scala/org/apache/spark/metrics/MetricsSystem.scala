@@ -79,6 +79,7 @@ private[spark] class MetricsSystem private (
   private val sources = new mutable.ArrayBuffer[Source]
   private val registry = new MetricRegistry()
 
+  // 用于标记当前的MetricsServlet是否正在运行
   private var running: Boolean = false
 
   // Treat MetricsServlet as a special sink as it should be exposed to add handlers to web ui
@@ -97,6 +98,7 @@ private[spark] class MetricsSystem private (
   def start() {
     require(!running, "Attempting to start a MetricsSystem that is already running")
     running = true
+    // 将静态的度量来源CodegenMetrics和HiveCatalogMetrics注册到MetricsRegistry
     StaticSources.allSources.foreach(registerSource)
     registerSources()
     registerSinks()
@@ -126,8 +128,10 @@ private[spark] class MetricsSystem private (
    *         application, executor/driver and metric source.
    */
   private[spark] def buildRegistryName(source: Source): String = {
+    // 度量命名空间
     val metricsNamespace = conf.get(METRICS_NAMESPACE).orElse(conf.getOption("spark.app.id"))
 
+    // 当前executor的身份标识
     val executorId = conf.getOption("spark.executor.id")
     val defaultName = MetricRegistry.name(source.sourceName)
 

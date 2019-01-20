@@ -40,11 +40,13 @@ private[spark] class ShuffleMapStage(
     parents: List[Stage],
     firstJobId: Int,
     callSite: CallSite,
-    val shuffleDep: ShuffleDependency[_, _, _])
+    val shuffleDep: ShuffleDependency[_, _, _])// 与ShuffleMapStage相对应的ShuffleDependency
   extends Stage(id, rdd, numTasks, parents, firstJobId, callSite) {
 
+  // 与ShuffleMapStage相关联的ActiveJob的列表
   private[this] var _mapStageJobs: List[ActiveJob] = Nil
 
+  // ShuffleMapStage可用的map任务的输出数量，者也代表了执行成功的map任务数
   private[this] var _numAvailableOutputs: Int = 0
 
   /**

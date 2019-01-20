@@ -37,6 +37,7 @@ private[spark] class JobWaiter[T](
   private val finishedTasks = new AtomicInteger(0)
   // If the job is finished, this will be its result. In the case of 0 task jobs (e.g. zero
   // partition RDDs), we set the jobResult directly to JobSucceeded.
+  // job完成后的结果
   private val jobPromise: Promise[Unit] =
     if (totalTasks == 0) Promise.successful(()) else Promise()
 

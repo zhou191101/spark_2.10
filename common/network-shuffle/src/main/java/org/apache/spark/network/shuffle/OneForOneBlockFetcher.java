@@ -86,6 +86,7 @@ public class OneForOneBlockFetcher {
    * {@link StreamHandle}. We will send all fetch requests immediately, without throttling.
    */
   public void start() {
+    // 校验要获取的Block数量
     if (blockIds.length == 0) {
       throw new IllegalArgumentException("Zero-sized blockIds array");
     }

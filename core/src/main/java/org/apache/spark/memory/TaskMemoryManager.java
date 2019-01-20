@@ -56,13 +56,16 @@ public class TaskMemoryManager {
   private static final Logger logger = LoggerFactory.getLogger(TaskMemoryManager.class);
 
   /** The number of bits used to address the page table. */
+  // 用于寻址page表的位数。在64位的长整型中将使用高位的13位存储页号
   private static final int PAGE_NUMBER_BITS = 13;
 
   /** The number of bits used to encode offsets in data pages. */
+  // 用于保存编码后的偏移量的位数。
   @VisibleForTesting
   static final int OFFSET_BITS = 64 - PAGE_NUMBER_BITS;  // 51
 
   /** The number of entries in the page table. */
+  // page表中的page数量。值为8192，实际是将1向左偏移13位所得的值
   private static final int PAGE_TABLE_SIZE = 1 << PAGE_NUMBER_BITS;
 
   /**
@@ -71,9 +74,11 @@ public class TaskMemoryManager {
    * maximum page size is limited by the maximum amount of data that can be stored in a long[]
    * array, which is (2^32 - 1) * 8 bytes (or 16 gigabytes). Therefore, we cap this at 16 gigabytes.
    */
+  // 最大的page大小
   public static final long MAXIMUM_PAGE_SIZE_BYTES = ((1L << 31) - 1) * 8L;
 
   /** Bit mask for the lower 51 bits of a long. */
+  // 长整型的低51位掩码
   private static final long MASK_LONG_LOWER_51_BITS = 0x7FFFFFFFFFFFFL;
 
   /**
@@ -84,11 +89,13 @@ public class TaskMemoryManager {
    * When using an in-heap allocator, the entries in this map will point to pages' base objects.
    * Entries are added to this map as new data pages are allocated.
    */
+  // page表。pageTable实际为page的数组，数组长度为PAGE_TABLE_SIZE
   private final MemoryBlock[] pageTable = new MemoryBlock[PAGE_TABLE_SIZE];
 
   /**
    * Bitmap for tracking free pages.
    */
+  // 用于跟踪空闲page的BitSet
   private final BitSet allocatedPages = new BitSet(PAGE_TABLE_SIZE);
 
   private final MemoryManager memoryManager;
@@ -100,6 +107,7 @@ public class TaskMemoryManager {
    * without doing any masking or lookups. Since this branching should be well-predicted by the JIT,
    * this extra layer of indirection / abstraction hopefully shouldn't be too expensive.
    */
+  // tungsten的内存模式。
   final MemoryMode tungstenMemoryMode;
 
   /**
@@ -111,6 +119,7 @@ public class TaskMemoryManager {
   /**
    * The amount of memory that is acquired but not used.
    */
+  // 任务尝试已经获得但是并未使用的内存大小
   private volatile long acquiredButNotUsed = 0L;
 
   /**
@@ -138,15 +147,19 @@ public class TaskMemoryManager {
     // off-heap memory. This is subject to change, though, so it may be risky to make this
     // optimization now in case we forget to undo it late when making changes.
     synchronized (this) {
+      // 尝试为当前任务按指定的存储模式获取指定大小的内存
       long got = memoryManager.acquireExecutionMemory(required, taskAttemptId, mode);
 
       // Try to release memory from other consumers first, then we can reduce the frequency of
       // spilling, avoid to have too many spilled files.
+      // 如果逻辑上已经获得的内存未达到期望的大小，那么遍历consumers在与指定内存模式相同且已经使用了内存的
+      // MemoryConsumer，对每个MemoryConsumer执行如下操作
       if (got < required) {
         // Call spill() on other consumers to release memory
         for (MemoryConsumer c: consumers) {
           if (c != consumer && c.getUsed() > 0 && c.getMode() == mode) {
             try {
+              // 溢出数据到磁盘，以释放内存
               long released = c.spill(required - got, consumer);
               if (released > 0) {
                 logger.debug("Task {} released {} from {} for {}", taskAttemptId,
@@ -166,6 +179,7 @@ public class TaskMemoryManager {
       }
 
       // call spill() on itself
+      // 如果已经获取的内存未达到期望的大小，则调用当前consumer的spill方法溢出数据到磁盘以释放内存
       if (got < required) {
         try {
           long released = consumer.spill(required - got, consumer);
@@ -249,6 +263,7 @@ public class TaskMemoryManager {
 
     final int pageNumber;
     synchronized (this) {
+      // 获取还未分配的页号，将此页号标记为以分配
       pageNumber = allocatedPages.nextClearBit(0);
       if (pageNumber >= PAGE_TABLE_SIZE) {
         releaseExecutionMemory(acquired, consumer);
@@ -259,18 +274,21 @@ public class TaskMemoryManager {
     }
     MemoryBlock page = null;
     try {
+      // 获取tungsten采用的内存分配器，并调用MemoryAllocator的allocate方法分配指定大小的MemoryBlock。
       page = memoryManager.tungstenMemoryAllocator().allocate(acquired);
     } catch (OutOfMemoryError e) {
       logger.warn("Failed to allocate a page ({} bytes), try again.", acquired);
       // there is no enough memory actually, it means the actual free memory is smaller than
       // MemoryManager thought, we should keep the acquired memory.
       synchronized (this) {
+        // 更新acquiredButNotUsed，然后清空allocatedPages并在此调用allocatePage方法
         acquiredButNotUsed += acquired;
         allocatedPages.clear(pageNumber);
       }
       // this could trigger spilling to free some pages.
       return allocatePage(size, consumer);
     }
+    // 给MemoryBlock指定页号，并将页号与memoryBlock之间对应关系放入pageTable中
     page.pageNumber = pageNumber;
     pageTable[pageNumber] = page;
     if (logger.isTraceEnabled()) {
@@ -308,6 +326,7 @@ public class TaskMemoryManager {
    *                     UNSAFE call (e.g. page.baseOffset() + something).
    * @return an encoded page address.
    */
+  // 用于根据给定的Page和Page中偏移量的地址，返回页号和相对于内存块起始地址的偏移量
   public long encodePageNumberAndOffset(MemoryBlock page, long offsetInPage) {
     if (tungstenMemoryMode == MemoryMode.OFF_HEAP) {
       // In off-heap mode, an offset is an absolute address that may require a full 64 bits to
@@ -355,16 +374,20 @@ public class TaskMemoryManager {
    * {@link TaskMemoryManager#encodePageNumberAndOffset(MemoryBlock, long)}
    */
   public long getOffsetInPage(long pagePlusOffsetAddress) {
+    // 获得在Page中的偏移量
     final long offsetInPage = decodeOffset(pagePlusOffsetAddress);
+    // 如果是堆内存，则返回上一步得到的偏移量
     if (tungstenMemoryMode == MemoryMode.ON_HEAP) {
       return offsetInPage;
-    } else {
+    } else {// 如果是堆外内存
       // In off-heap mode, an offset is an absolute address. In encodePageNumberAndOffset, we
       // converted the absolute address into a relative address. Here, we invert that operation:
+      // 从64位的长整型中解码获得Page的页号，然后从pageTable中获得与页号对应的MemoryBlock
       final int pageNumber = decodePageNumber(pagePlusOffsetAddress);
       assert (pageNumber >= 0 && pageNumber < PAGE_TABLE_SIZE);
       final MemoryBlock page = pageTable[pageNumber];
       assert (page != null);
+      // 将Page在操作系统内存中的地址与第一步得到的偏移量之和作为偏移量
       return page.getBaseOffset() + offsetInPage;
     }
   }

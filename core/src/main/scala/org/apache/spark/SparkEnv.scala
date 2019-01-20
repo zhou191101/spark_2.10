@@ -292,10 +292,12 @@ object SparkEnv extends Logging {
     def registerOrLookupEndpoint(
         name: String, endpointCreator: => RpcEndpoint):
       RpcEndpointRef = {
+      // 当前应用程序是driver，则创建并注册到dispacher中
       if (isDriver) {
         logInfo("Registering " + name)
         rpcEnv.setupEndpoint(name, endpointCreator)
       } else {
+        // 当前应用是executor，则从远端driver实例的nettyrpcenv的dispacher中查找该引用
         RpcUtils.makeDriverRef(name, conf, rpcEnv)
       }
     }
@@ -325,31 +327,40 @@ object SparkEnv extends Logging {
     val useLegacyMemoryManager = conf.getBoolean("spark.memory.useLegacyMode", false)
     val memoryManager: MemoryManager =
       if (useLegacyMemoryManager) {
+        // spark早期遗留下来的内存实现
         new StaticMemoryManager(conf, numUsableCores)
       } else {
+        // 默认的内存管理器
         UnifiedMemoryManager(conf, numUsableCores)
       }
 
+    // 获取当前SparkEnv的块传输服务BlockTransferService对外提供的端口号
     val blockManagerPort = if (isDriver) {
       conf.get(DRIVER_BLOCK_MANAGER_PORT)
     } else {
       conf.get(BLOCK_MANAGER_PORT)
     }
 
+    // 创建块传输服务blockTransferService。
+    // blockTransferService将提供对外的块传输服务。也正是因为MapOutputTracker与blockTransferService
+    // 的配合，才实现了Spark的Shuffle
     val blockTransferService =
       new NettyBlockTransferService(conf, securityManager, bindAddress, advertiseAddress,
         blockManagerPort, numUsableCores)
 
+    // 查找或者注册BlockManagerMasterEndpoint
     val blockManagerMaster = new BlockManagerMaster(registerOrLookupEndpoint(
       BlockManagerMaster.DRIVER_ENDPOINT_NAME,
       new BlockManagerMasterEndpoint(rpcEnv, isLocal, conf, listenerBus)),
       conf, isDriver)
 
     // NB: blockManager is not valid until initialize() is called later.
+    // 只有当initialize（）被调用后  blockManager才会正常工作x
     val blockManager = new BlockManager(executorId, rpcEnv, blockManagerMaster,
       serializerManager, conf, memoryManager, mapOutputTracker, shuffleManager,
       blockTransferService, securityManager, numUsableCores)
 
+    // 创建度量系统
     val metricsSystem = if (isDriver) {
       // Don't start metrics system right now for Driver.
       // We need to wait for the task scheduler to give us an app ID.
@@ -365,9 +376,12 @@ object SparkEnv extends Logging {
       ms
     }
 
+    // outputCommitCoordinator决定任务是否可以提交输出到HDFS
+    // 新建outputCommitCoordinator实例
     val outputCommitCoordinator = mockOutputCommitCoordinator.getOrElse {
       new OutputCommitCoordinator(conf, isDriver)
     }
+
     val outputCommitCoordinatorRef = registerOrLookupEndpoint("OutputCommitCoordinator",
       new OutputCommitCoordinatorEndpoint(rpcEnv, outputCommitCoordinator))
     outputCommitCoordinator.coordinatorRef = Some(outputCommitCoordinatorRef)

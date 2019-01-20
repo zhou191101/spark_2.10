@@ -88,12 +88,16 @@ public abstract class MemoryConsumer {
    * Allocates a LongArray of `size`.
    */
   public LongArray allocateArray(long size) {
+    // 计算所需的page大小。长整型占8个字节，所以需要乘8
     long required = size * 8L;
+    // 分配指定大小的memoryBlock
     MemoryBlock page = taskMemoryManager.allocatePage(required, this);
+    // 未分配到足够的内存
     if (page == null || page.size() < required) {
       long got = 0;
       if (page != null) {
         got = page.size();
+        // 释放内存
         taskMemoryManager.freePage(page, this);
       }
       taskMemoryManager.showMemoryUsage();

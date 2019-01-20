@@ -75,12 +75,12 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
   private final int mapId;
   private final TaskContext taskContext;
   private final SparkConf sparkConf;
-  private final boolean transferToEnabled;
-  private final int initialSortBufferSize;
+  private final boolean transferToEnabled;// 是否采用NIO的从文件流到文件流的复制方式。默认为true
+  private final int initialSortBufferSize;// 初始化的排序缓冲大小。默认为4096
 
   @Nullable private MapStatus mapStatus;
   @Nullable private ShuffleExternalSorter sorter;
-  private long peakMemoryUsedBytes = 0;
+  private long peakMemoryUsedBytes = 0;// 内存使用的峰值
 
   /** Subclass of ByteArrayOutputStream that exposes `buf` directly. */
   private static final class MyByteArrayOutputStream extends ByteArrayOutputStream {
@@ -166,7 +166,7 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
       while (records.hasNext()) {
         insertRecordIntoSorter(records.next());
       }
-      closeAndWriteOutput();
+      closeAndWriteOutput();// 将map任务输出的数据持久化到磁盘
       success = true;
     } finally {
       if (sorter != null) {
@@ -203,6 +203,7 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
   @VisibleForTesting
   void closeAndWriteOutput() throws IOException {
     assert(sorter != null);
+    // 更新内存使用峰值
     updatePeakMemoryUsed();
     serBuffer = null;
     serOutputStream = null;
@@ -234,6 +235,7 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
   void insertRecordIntoSorter(Product2<K, V> record) throws IOException {
     assert(sorter != null);
     final K key = record._1();
+    // 计算记录放分区ID
     final int partitionId = partitioner.getPartition(key);
     serBuffer.reset();
     serOutputStream.writeKey(key, OBJECT_CLASS_TAG);
@@ -243,6 +245,7 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     final int serializedRecordSize = serBuffer.size();
     assert (serializedRecordSize > 0);
 
+    // 将serBuffer底层的字节数组插入到Tungsten的内存中
     sorter.insertRecord(
       serBuffer.getBuf(), Platform.BYTE_ARRAY_OFFSET, serializedRecordSize, partitionId);
   }

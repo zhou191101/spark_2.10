@@ -29,21 +29,25 @@ import org.apache.spark.util.Utils
 import org.apache.spark.util.io.ChunkedByteBuffer
 
 /**
- * Stores BlockManager blocks on disk.
- */
+  * Stores BlockManager blocks on disk.
+  * 依赖于DiskBlockManager的服务
+  */
 private[spark] class DiskStore(conf: SparkConf, diskManager: DiskBlockManager) extends Logging {
 
+  // 读取磁盘中的Block时，是直接读取还是使用FileChannel的内存镜像映射方法芙蕖的阈值
   private val minMemoryMapBytes = conf.getSizeAsBytes("spark.storage.memoryMapThreshold", "2m")
 
+  // 获取Block文件的大小
   def getSize(blockId: BlockId): Long = {
+    // 实际上是调用DiskBlockManager的getFile方法，然后获取其大小
     diskManager.getFile(blockId.name).length
   }
 
   /**
-   * Invokes the provided callback function to write the specific block.
-   *
-   * @throws IllegalStateException if the block already exists in the disk store.
-   */
+    * Invokes the provided callback function to write the specific block.
+    * 用于将BlockId所对应的Block写入磁盘
+    * @throws IllegalStateException if the block already exists in the disk store.
+    */
   def put(blockId: BlockId)(writeFunc: FileOutputStream => Unit): Unit = {
     if (contains(blockId)) {
       throw new IllegalStateException(s"Block $blockId is already present in the disk store")
@@ -60,7 +64,7 @@ private[spark] class DiskStore(conf: SparkConf, diskManager: DiskBlockManager) e
       try {
         Closeables.close(fileOutputStream, threwException)
       } finally {
-         if (threwException) {
+        if (threwException) {
           remove(blockId)
         }
       }

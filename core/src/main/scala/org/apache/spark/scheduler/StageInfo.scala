@@ -84,7 +84,9 @@ private[spark] object StageInfo {
       taskMetrics: TaskMetrics = null,
       taskLocalityPreferences: Seq[Seq[TaskLocation]] = Seq.empty
     ): StageInfo = {
+    // 获取rdd的祖先依赖中属于narrow的rdd序列
     val ancestorRddInfos = stage.rdd.getNarrowAncestors.map(RDDInfo.fromRdd)
+    // 创建rddinfo对象
     val rddInfos = Seq(RDDInfo.fromRdd(stage.rdd)) ++ ancestorRddInfos
     new StageInfo(
       stage.id,

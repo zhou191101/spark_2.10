@@ -59,6 +59,7 @@ private[spark] class NettyBlockTransferService(
   private[this] var appId: String = _
 
   override def init(blockDataManager: BlockDataManager): Unit = {
+    // 服务端对客户端对Block读写请求的处理都见给了RpcHandler的实现类，因此NettyBlockRpcServer将处理Block块的RPC请求
     val rpcHandler = new NettyBlockRpcServer(conf.getAppId, serializer, blockDataManager)
     var serverBootstrap: Option[TransportServerBootstrap] = None
     var clientBootstrap: Option[TransportClientBootstrap] = None

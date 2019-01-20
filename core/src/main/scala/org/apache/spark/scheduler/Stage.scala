@@ -68,6 +68,7 @@ private[scheduler] abstract class Stage(
   /** Set of jobs that this stage belongs to. */
   val jobIds = new HashSet[Int]
 
+  // 存储待处理分区的索引的集合
   val pendingPartitions = new HashSet[Int]
 
   /** The ID to use for the next new attempt for this stage. */
@@ -82,6 +83,7 @@ private[scheduler] abstract class Stage(
    * StageInfo to tell SparkListeners when a job starts (which happens before any stage attempts
    * have been created).
    */
+  // stage最后一次尝试的信息
   private var _latestInfo: StageInfo = StageInfo.fromStage(this, nextAttemptId)
 
   /**
@@ -102,6 +104,8 @@ private[scheduler] abstract class Stage(
    * This method updates the running set of failed stage attempts and returns
    * true if the number of failures exceeds the allowable number of failures.
    */
+  // 用于将发生FetchFailure的stage尝试的身份标识添加到fetchFailedAttemptIds中，并返回发生FetchFailure的次数
+  // 是否已经超过了允许FetchFailure的次数的状态
   private[scheduler] def failedOnFetchAndShouldAbort(stageAttemptId: Int): Boolean = {
     fetchFailedAttemptIds.add(stageAttemptId)
     fetchFailedAttemptIds.size >= Stage.MAX_CONSECUTIVE_FETCH_FAILURES
